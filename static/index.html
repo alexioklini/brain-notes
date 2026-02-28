@@ -2593,22 +2593,39 @@ async function aiBlockCommand(action){
     loadDiv.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div> AI researching "'+topic+'"...';
     loadDiv.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);padding:12px 20px;border-radius:10px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.3)';
     document.body.appendChild(loadDiv);
+    const phases = ['Gathering sources...','Analyzing content...','Writing report...','Finalizing...'];
+    let pi = 0;
+    const progressTimer = setInterval(() => {
+      pi = Math.min(pi + 1, phases.length - 1);
+      const span = loadDiv.querySelector('.research-phase');
+      if(span) span.textContent = phases[pi];
+    }, 20000);
+    loadDiv.innerHTML = '<div class="typing-dots" style="display:inline-flex;margin-right:8px"><span></span><span></span><span></span></div> <span class="research-phase">'+phases[0]+'</span>';
     
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 290000); // 290s
       const res = await fetch('/api/ai/research', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({topic})
+        body: JSON.stringify({topic}),
+        signal: controller.signal
       });
+      clearTimeout(timer);
+      clearInterval(progressTimer);
       const data = await res.json();
       loadDiv.remove();
-      if(data.page_id){
+      if(data.error){
+        alert('Research error: ' + data.error);
+      } else if(data.page_id){
         await refreshPages();
         loadPage(data.page_id);
       }
     } catch(e){
+      clearInterval(progressTimer);
       loadDiv.remove();
-      alert('Research failed: ' + e.message);
+      if(e.name === 'AbortError') alert('Research timed out — try a more specific topic.');
+      else alert('Research failed: ' + e.message);
     }
     return;
   }

@@ -1532,7 +1532,7 @@ def call_claude(api_config, system, messages):
         'messages': oai_messages,
     }
     
-    with httpx.Client(timeout=120) as client:
+    with httpx.Client(timeout=300) as client:
         r = client.post(url, headers=headers, json=body)
         r.raise_for_status()
         oai_resp = r.json()
