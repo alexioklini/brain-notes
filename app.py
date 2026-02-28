@@ -687,7 +687,7 @@ import httpx, re
 
 # Load API key from OpenClaw config
 def get_api_config():
-    """Use OpenClaw Gateway's OpenAI-compatible chat completions endpoint."""
+    """Use OpenClaw Gateway chat completions with notes-chat agent."""
     config_path = os.path.expanduser('~/.openclaw/openclaw.json')
     try:
         with open(config_path) as f:
@@ -698,14 +698,13 @@ def get_api_config():
         return {
             'api_key': token,
             'base_url': f'http://127.0.0.1:{port}',
-            'mode': 'openai',  # Use OpenAI-compatible API
         }
     except:
-        return {'api_key': '', 'base_url': 'http://127.0.0.1:18789', 'mode': 'openai'}
+        return {'api_key': '', 'base_url': 'http://127.0.0.1:18789'}
 
 # Chat configuration
 CHAT_CONFIG = {
-    'model': 'minimax-portal/MiniMax-M2.1',
+    'model': 'minimax-portal/MiniMax-M2.5',
     'max_tokens': 4096,
 }
 
@@ -1224,11 +1223,12 @@ def clear_chat():
 
 
 def call_claude(api_config, system, messages):
-    """Call LLM via OpenClaw Gateway (OpenAI-compatible chat completions)."""
+    """Call LLM via OpenClaw Gateway chat completions with notes-chat agent."""
     url = f"{api_config['base_url']}/v1/chat/completions"
     headers = {
         'Authorization': f"Bearer {api_config['api_key']}",
         'content-type': 'application/json',
+        'x-openclaw-agent-id': 'notes-chat',
     }
     
     oai_messages = [{"role": "system", "content": system}]
@@ -1236,12 +1236,8 @@ def call_claude(api_config, system, messages):
         if isinstance(msg.get('content'), str):
             oai_messages.append({"role": msg['role'], "content": msg['content']})
     
-    model = CHAT_CONFIG['model']
-    if '/' not in model:
-        model = f"anthropic-cloud/{model}"
-    
     body = {
-        'model': model,
+        'model': CHAT_CONFIG['model'],
         'max_tokens': CHAT_CONFIG['max_tokens'],
         'messages': oai_messages,
     }

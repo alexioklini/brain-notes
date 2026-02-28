@@ -476,12 +476,9 @@ a{color:var(--cyan);text-decoration:none}
     </div>
     <div class="chat-header-right">
       <select id="chat-model" class="chat-model-select" onchange="updateChatModel(this.value)">
+        <option value="minimax-portal/MiniMax-M2.5">MiniMax M2.5</option>
         <option value="minimax-portal/MiniMax-M2.1">MiniMax M2.1</option>
         <option value="minimax-portal/MiniMax-M2.1-lightning">MiniMax Lightning</option>
-        <option value="anthropic-cloud/claude-opus-4-6-20260205">Opus 4.6</option>
-        <option value="anthropic-cloud/claude-opus-4-5-20251101">Opus 4.5</option>
-        <option value="anthropic-cloud/claude-sonnet-4-6">Sonnet 4.6</option>
-        <option value="anthropic-cloud/claude-haiku-4-5-20251001">Haiku 4.5</option>
       </select>
       <button class="chat-btn" onclick="clearChat()" title="Clear chat"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
       <button class="chat-btn" onclick="toggleChat()" title="Close"><i data-lucide="x" style="width:14px;height:14px"></i></button>
