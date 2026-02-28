@@ -812,7 +812,7 @@ function blockHTML(b, i, num){
     const checked = props.checked ? ' checked' : '';
     return `<div class="block${props.checked?' checked':''}" data-id="${b.id}" data-type="todo" data-indent="${indent}">
       <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
-      <div class="block-content"><input type="checkbox"${checked} onchange="toggleTodo('${b.id}',this.checked)"><div class="todo-text" contenteditable="true" data-block-id="${b.id}" data-placeholder="To-do">${esc(b.content)}</div></div>
+      <div class="block-content"><input type="checkbox"${checked} onchange="toggleTodo('${b.id}',this.checked)"><div class="todo-text" contenteditable="true" data-block-id="${b.id}" data-placeholder="To-do">${renderContent(b.content)}</div></div>
     </div>`;
   }
   
@@ -828,7 +828,7 @@ function blockHTML(b, i, num){
     return `<div class="block" data-id="${b.id}" data-type="callout" data-indent="${indent}">
       <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
       <span class="callout-icon">${icon}</span>
-      <div class="block-content" contenteditable="true" data-block-id="${b.id}" data-placeholder="Type something...">${esc(b.content)}</div>
+      <div class="block-content" contenteditable="true" data-block-id="${b.id}" data-placeholder="Type something...">${renderContent(b.content)}</div>
     </div>`;
   }
   
@@ -924,7 +924,7 @@ function blockHTML(b, i, num){
   
   return `<div class="block" data-id="${b.id}" data-type="${b.type}" data-indent="${indent}">
     <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
-    <div class="block-content" contenteditable="true" data-block-id="${b.id}" data-placeholder="${ph}"${b.type==='numbered'?' data-number="'+num+'"':''}>${esc(b.content)}</div>
+    <div class="block-content" contenteditable="true" data-block-id="${b.id}" data-placeholder="${ph}"${b.type==='numbered'?' data-number="'+num+'"':''}>${renderContent(b.content)}</div>
   </div>`;
 }
 
@@ -938,25 +938,25 @@ function setupBlockListeners(){
     });
   });
   document.querySelectorAll('[data-block-id]').forEach(el => {
-    el.addEventListener('input', () => saveBlock(el.dataset.blockId, el.innerText));
+    el.addEventListener('input', () => saveBlock(el.dataset.blockId, el.innerHTML));
     el.addEventListener('keydown', e => blockKeyDown(e, el));
     el.addEventListener('blur', () => {
       // Flush any pending save immediately on blur
       const bid = el.dataset.blockId;
       if(saveTimers[bid]){ clearTimeout(saveTimers[bid]); saveTimers[bid]=null; }
       const b = currentBlocks.find(b=>b.id===bid);
-      if(b && b.content !== el.innerText){ b.content = el.innerText; api('/blocks/'+bid, {method:'PUT', body:{content:el.innerText}}); }
+      if(b && b.content !== el.innerHTML){ b.content = el.innerHTML; api('/blocks/'+bid, {method:'PUT', body:{content:el.innerHTML}}); }
     });
   });
   // Todo text fields also need save + keydown
   document.querySelectorAll('.todo-text[data-block-id]').forEach(el => {
-    el.addEventListener('input', () => saveBlock(el.dataset.blockId, el.innerText));
+    el.addEventListener('input', () => saveBlock(el.dataset.blockId, el.innerHTML));
     el.addEventListener('keydown', e => blockKeyDown(e, el));
     el.addEventListener('blur', () => {
       const bid = el.dataset.blockId;
       if(saveTimers[bid]){ clearTimeout(saveTimers[bid]); saveTimers[bid]=null; }
       const b = currentBlocks.find(b=>b.id===bid);
-      if(b && b.content !== el.innerText){ b.content = el.innerText; api('/blocks/'+bid, {method:'PUT', body:{content:el.innerText}}); }
+      if(b && b.content !== el.innerHTML){ b.content = el.innerHTML; api('/blocks/'+bid, {method:'PUT', body:{content:el.innerHTML}}); }
     });
   });
   // Drag & drop reorder
@@ -1042,8 +1042,8 @@ function blockKeyDown(e, el){
     return;
   }
   
-  // Slash command — don't preventDefault, let '/' be typed for filtering
-  if(e.key === '/' && el.innerText === ''){
+  // Slash command — works anywhere in text (like Notion)
+  if(e.key === '/'){
     setTimeout(() => showSlashMenu(el, bid), 10);
     return;
   }
@@ -1315,9 +1315,11 @@ function renderSlashMenu(filter){
 
 function slashFilter(e){
   const text = e.target.innerText;
-  if(!text.startsWith('/')){hideSlashMenu();return;}
+  const lastSlash = text.lastIndexOf('/');
+  if(lastSlash === -1){hideSlashMenu();return;}
+  const filterText = text.substring(lastSlash);
   slashIdx = 0;
-  renderSlashMenu(text);
+  renderSlashMenu(filterText);
 }
 
 function slashKeys(e){
@@ -1329,7 +1331,7 @@ function slashKeys(e){
     const item = document.querySelector('.slash-item.focused');
     if(item) selectSlashItem(item.dataset.type);
   }
-  if(e.key === 'Escape'){e.preventDefault();hideSlashMenu();e.target.innerText='';}
+  if(e.key === 'Escape'){e.preventDefault();hideSlashMenu();const t=e.target.innerText;const si=t.lastIndexOf('/');if(si>=0)e.target.innerText=t.substring(0,si);}
 }
 
 async function selectSlashItem(type){
@@ -1339,8 +1341,15 @@ async function selectSlashItem(type){
   const block = currentBlocks.find(b=>b.id===bid);
   if(!block) return;
   
-  // Clear content in local state FIRST
-  block.content = '';
+  // Remove the /command text from block content
+  const el = document.querySelector(`[data-block-id="${bid}"]`);
+  if(el){
+    const text = el.innerText;
+    const slashIdx = text.lastIndexOf('/');
+    block.content = slashIdx > 0 ? text.substring(0, slashIdx).trim() : '';
+  } else {
+    block.content = '';
+  }
   block.type = type;
   
   // AI block commands
@@ -2113,6 +2122,7 @@ async function aiInline(action, language){
           let content = line;
           if(line.startsWith('- ') || line.startsWith('* ')){ type = 'bullet'; content = line.slice(2); }
           else if(/^\d+\.\s/.test(line)){ type = 'numbered'; content = line.replace(/^\d+\.\s/,''); }
+          content = mdToHtml(content);
           
           const block = await api('/pages/'+currentPage.id+'/blocks', {
             method: 'POST',
@@ -2123,15 +2133,16 @@ async function aiInline(action, language){
         renderPage();
       }
     } else {
-      // Replace selected text
+      // Replace selected text with markdown-rendered HTML
       const sel = window.getSelection();
       if(sel.rangeCount > 0){
         const range = sel.getRangeAt(0);
         range.deleteContents();
-        range.insertNode(document.createTextNode(data.result));
+        const frag = document.createRange().createContextualFragment(mdToHtml(data.result));
+        range.insertNode(frag);
         // Save the block
         const el = document.querySelector(`[data-block-id="${aiSelectedBlock}"]`);
-        if(el) saveBlock(aiSelectedBlock, el.innerText);
+        if(el) saveBlock(aiSelectedBlock, el.innerHTML);
       }
     }
   } catch(e){
@@ -2220,9 +2231,10 @@ function showAiPrompt(){
         if(sel.rangeCount > 0){
           const range = sel.getRangeAt(0);
           range.deleteContents();
-          range.insertNode(document.createTextNode(data.result));
+          const frag = document.createRange().createContextualFragment(mdToHtml(data.result));
+          range.insertNode(frag);
           const el = document.querySelector(`[data-block-id="${aiSelectedBlock}"]`);
-          if(el) saveBlock(aiSelectedBlock, el.innerText);
+          if(el) saveBlock(aiSelectedBlock, el.innerHTML);
         }
       }
     });
@@ -2306,6 +2318,9 @@ async function insertAiResult(text){
     else if(/^\d+\.\s/.test(line)){ type = 'numbered'; content = line.replace(/^\d+\.\s/,''); }
     else if(line.startsWith('> ')){ type = 'quote'; content = line.slice(2); }
     
+    // Convert inline markdown to HTML
+    content = mdToHtml(content);
+    
     const block = await api('/pages/'+currentPage.id+'/blocks', {
       method: 'POST',
       body: {type, content}
@@ -2313,6 +2328,20 @@ async function insertAiResult(text){
     currentBlocks.push(block);
   }
   renderPage();
+}
+
+// Markdown inline → HTML converter
+function mdToHtml(text){
+  if(!text) return text;
+  return text
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/_(.+?)_/g, '<em>$1</em>')
+    .replace(/~~(.+?)~~/g, '<s>$1</s>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 }
 
 // Hook AI toolbar into selection change
@@ -2504,6 +2533,7 @@ document.addEventListener('keydown', e => {
 
 // ── Utils ──
 function esc(s){if(!s)return '';const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function renderContent(s){if(!s)return '';if(/<[a-z][\s\S]*>/i.test(s))return s;return esc(s);}
 </script>
 </body>
 </html>
