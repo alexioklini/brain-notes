@@ -839,18 +839,21 @@ IMPORTANT: Start directly with the content. Do NOT include meta-commentary like 
         # Parse markdown into blocks
         blocks = parse_markdown_to_blocks(response_text.strip())
         
-        # Generate a short title
-        try:
-            title_result = call_claude(api_config,
-                'Generate a very short title (3-6 words max) for this research topic. Return ONLY the title, no quotes, no prefix.',
-                [{"role": "user", "content": topic}])
-            short_title = ''
-            for block in title_result.get('content', []):
-                if block.get('type') == 'text':
-                    short_title += block['text']
-            short_title = short_title.strip().strip('"').strip("'")[:80]
-        except Exception:
-            short_title = topic[:60]
+        # Extract short title from first heading in response, or truncate topic
+        short_title = None
+        for block in blocks:
+            if block['type'] in ('h1', 'h2') and block['content']:
+                # Strip HTML tags for title
+                t = re.sub(r'<[^>]+>', '', block['content']).strip()
+                if len(t) <= 80:
+                    short_title = t
+                    blocks = [b for b in blocks if b is not block]  # remove from content
+                break
+        if not short_title:
+            # Truncate topic to first sentence or 60 chars
+            short_title = topic.split('.')[0].split('\n')[0][:60].strip()
+            if len(topic) > 60:
+                short_title += '…'
         
         # Create page: short title, then prompt as subtitle, then research content
         page_id = gen_id()
