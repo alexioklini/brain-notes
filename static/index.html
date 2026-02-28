@@ -140,6 +140,43 @@ a{color:var(--cyan);text-decoration:none}
 .block[data-type="page_link"] .block-content{color:var(--cyan);display:flex;align-items:center;gap:6px}
 .block[data-type="page_link"]:hover .block-content{text-decoration:underline}
 
+/* Columns */
+.block[data-type^="columns"]{background:none!important}
+.block[data-type^="columns"]:hover{background:none!important}
+.columns-wrap{display:grid;gap:12px;width:100%;min-height:60px}
+.columns-wrap.cols-2{grid-template-columns:1fr 1fr}
+.columns-wrap.cols-3{grid-template-columns:1fr 1fr 1fr}
+.column{background:var(--card);border:1px dashed var(--border);border-radius:8px;padding:12px;min-height:60px;outline:none}
+.column:focus{border-color:var(--cyan);border-style:solid}
+.column:empty::before{content:'Type here...';color:var(--text4)}
+
+/* Table */
+.block[data-type="table"]{background:none!important}
+.block[data-type="table"]:hover{background:none!important}
+.block-table{width:100%;border-collapse:collapse;font-size:14px}
+.block-table th,.block-table td{border:1px solid var(--border);padding:6px 10px;text-align:left;outline:none;min-width:80px}
+.block-table th{background:rgba(255,255,255,.03);font-weight:600;font-size:13px;color:var(--text2)}
+.block-table td{color:var(--text)}
+.block-table td:focus,.block-table th:focus{box-shadow:inset 0 0 0 1px var(--cyan)}
+.table-controls{display:flex;gap:4px;margin-top:4px;opacity:0;transition:opacity var(--transition)}
+.block[data-type="table"]:hover .table-controls{opacity:1}
+.table-ctrl-btn{background:none;border:1px solid var(--border);color:var(--text4);cursor:pointer;padding:2px 8px;border-radius:4px;font-size:11px;font-family:inherit;transition:all var(--transition)}
+.table-ctrl-btn:hover{background:var(--card-hover);color:var(--text3);border-color:var(--border-hover)}
+
+/* Image */
+.block[data-type="image"] .img-wrap{width:100%;border-radius:8px;overflow:hidden;position:relative;background:var(--card)}
+.block[data-type="image"] img{max-width:100%;display:block;border-radius:8px}
+.block[data-type="image"] .img-placeholder{padding:40px;text-align:center;color:var(--text4);cursor:pointer;border:2px dashed var(--border);border-radius:8px;transition:all var(--transition)}
+.block[data-type="image"] .img-placeholder:hover{border-color:var(--cyan);color:var(--text3)}
+.block[data-type="image"] .img-caption{font-size:12px;color:var(--text3);text-align:center;margin-top:4px;outline:none}
+.block[data-type="image"] .img-caption:empty::before{content:'Add a caption...';color:var(--text4)}
+
+/* Embed */
+.block[data-type="embed"] .embed-wrap{width:100%;border-radius:8px;overflow:hidden;background:var(--card)}
+.block[data-type="embed"] iframe{width:100%;height:400px;border:none;border-radius:8px}
+.block[data-type="embed"] .embed-placeholder{padding:30px;text-align:center;color:var(--text4);cursor:pointer;border:2px dashed var(--border);border-radius:8px;transition:all var(--transition)}
+.block[data-type="embed"] .embed-placeholder:hover{border-color:var(--cyan);color:var(--text3)}
+
 /* Block indent */
 .block[data-indent="1"]{margin-left:24px}
 .block[data-indent="2"]{margin-left:48px}
@@ -472,7 +509,14 @@ const BLOCK_TYPES = [
     {type:'todo',icon:'☑',name:'To-do',desc:'Track tasks with checkboxes'},
     {type:'toggle',icon:'▶',name:'Toggle',desc:'Collapsible content'},
   ]},
+  {section:'Layout', items:[
+    {type:'columns_2',icon:'▐▌',name:'2 Columns',desc:'Side by side layout'},
+    {type:'columns_3',icon:'▐▐▌',name:'3 Columns',desc:'Three column layout'},
+    {type:'table',icon:'▦',name:'Table',desc:'Simple table'},
+  ]},
   {section:'Media & Advanced', items:[
+    {type:'image',icon:'🖼',name:'Image',desc:'Upload or embed an image'},
+    {type:'embed',icon:'⬡',name:'Embed',desc:'Embed a URL (video, map, etc.)'},
     {type:'quote',icon:'❝',name:'Quote',desc:'Capture a quote'},
     {type:'callout',icon:'💡',name:'Callout',desc:'Highlighted info block'},
     {type:'code',icon:'</>',name:'Code',desc:'Code snippet'},
@@ -622,6 +666,85 @@ function blockHTML(b, i, num){
       <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
       <span class="callout-icon">${icon}</span>
       <div class="block-content" contenteditable="true" data-block-id="${b.id}" data-placeholder="Type something...">${esc(b.content)}</div>
+    </div>`;
+  }
+  
+  // Columns
+  if(b.type === 'columns_2' || b.type === 'columns_3'){
+    const numCols = b.type === 'columns_2' ? 2 : 3;
+    const colData = typeof b.content === 'string' && b.content.startsWith('[') ? JSON.parse(b.content) : Array(numCols).fill('');
+    while(colData.length < numCols) colData.push('');
+    return `<div class="block" data-id="${b.id}" data-type="${b.type}" data-indent="${indent}">
+      <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
+      <div class="columns-wrap cols-${numCols}">
+        ${colData.map((c,ci) => `<div class="column" contenteditable="true" data-block-id="${b.id}" data-col="${ci}" 
+          oninput="saveColumnBlock('${b.id}')">${esc(c)}</div>`).join('')}
+      </div>
+    </div>`;
+  }
+  
+  // Table
+  if(b.type === 'table'){
+    let tableData;
+    try { tableData = JSON.parse(b.content || '[]'); } catch(e){ tableData = []; }
+    if(!tableData.length) tableData = [['Header 1','Header 2','Header 3'],['','','']];
+    const headerRow = tableData[0] || [];
+    const dataRows = tableData.slice(1);
+    return `<div class="block" data-id="${b.id}" data-type="table" data-indent="${indent}">
+      <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
+      <div style="flex:1;overflow-x:auto">
+        <table class="block-table" data-block-id="${b.id}">
+          <thead><tr>${headerRow.map((h,ci) => `<th contenteditable="true" data-row="0" data-col="${ci}" oninput="saveTableBlock('${b.id}')">${esc(h)}</th>`).join('')}</tr></thead>
+          <tbody>${dataRows.map((row,ri) => `<tr>${row.map((cell,ci) => `<td contenteditable="true" data-row="${ri+1}" data-col="${ci}" oninput="saveTableBlock('${b.id}')">${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+        <div class="table-controls">
+          <button class="table-ctrl-btn" onclick="tableAddRow('${b.id}')">+ Row</button>
+          <button class="table-ctrl-btn" onclick="tableAddCol('${b.id}')">+ Column</button>
+          <button class="table-ctrl-btn" onclick="tableDelRow('${b.id}')">− Row</button>
+          <button class="table-ctrl-btn" onclick="tableDelCol('${b.id}')">− Column</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  
+  // Image
+  if(b.type === 'image'){
+    const hasUrl = b.content && b.content.startsWith('http');
+    return `<div class="block" data-id="${b.id}" data-type="image" data-indent="${indent}">
+      <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
+      <div style="flex:1">
+        ${hasUrl 
+          ? `<div class="img-wrap"><img src="${esc(b.content)}" alt="" onerror="this.parentElement.innerHTML='<div class=\\'img-placeholder\\' onclick=\\'setImageUrl(\\"${b.id}\\")\\'><i data-lucide=\\'image\\' style=\\'width:24px;height:24px\\'></i><br>Failed to load image. Click to change URL.</div>'"></div>
+             <div class="img-caption" contenteditable="true" data-caption-id="${b.id}" oninput="saveImageCaption('${b.id}',this.innerText)">${esc(props.caption||'')}</div>`
+          : `<div class="img-placeholder" onclick="setImageUrl('${b.id}')">
+              <i data-lucide="image" style="width:24px;height:24px"></i><br>
+              Click to add image URL or paste an image
+            </div>`
+        }
+      </div>
+    </div>`;
+  }
+  
+  // Embed
+  if(b.type === 'embed'){
+    const hasUrl = b.content && b.content.startsWith('http');
+    let embedUrl = b.content;
+    // Convert YouTube URLs to embed
+    if(embedUrl){
+      const yt = embedUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+      if(yt) embedUrl = `https://www.youtube.com/embed/${yt[1]}`;
+    }
+    return `<div class="block" data-id="${b.id}" data-type="embed" data-indent="${indent}">
+      <div class="block-handle"><span class="block-add" onclick="addBlockAfter('${b.id}')"><i data-lucide="plus" style="width:14px;height:14px"></i></span><span class="block-drag" draggable="true"><i data-lucide="grip-vertical" style="width:14px;height:14px"></i></span></div>
+      <div style="flex:1">
+        ${hasUrl 
+          ? `<div class="embed-wrap"><iframe src="${esc(embedUrl)}" allowfullscreen></iframe></div>`
+          : `<div class="embed-placeholder" onclick="setEmbedUrl('${b.id}')">
+              <i data-lucide="globe" style="width:24px;height:24px"></i><br>
+              Click to embed a URL (YouTube, Maps, etc.)
+            </div>`
+        }
+      </div>
     </div>`;
   }
   
@@ -876,6 +999,112 @@ async function toggleTodo(id, checked){
   if(el) el.classList.toggle('checked', checked);
 }
 
+// ── Column Blocks ──
+function saveColumnBlock(blockId){
+  const cols = document.querySelectorAll(`.column[data-block-id="${blockId}"]`);
+  const data = Array.from(cols).map(c => c.innerText);
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = JSON.stringify(data);
+  clearTimeout(saveTimers[blockId]);
+  saveTimers[blockId] = setTimeout(() => {
+    api('/blocks/'+blockId, {method:'PUT', body:{content:JSON.stringify(data)}});
+  }, 500);
+}
+
+// ── Table Blocks ──
+function getTableData(blockId){
+  const table = document.querySelector(`table[data-block-id="${blockId}"]`);
+  if(!table) return [];
+  const rows = [];
+  table.querySelectorAll('tr').forEach(tr => {
+    const cells = [];
+    tr.querySelectorAll('th,td').forEach(cell => cells.push(cell.innerText));
+    rows.push(cells);
+  });
+  return rows;
+}
+
+function saveTableBlock(blockId){
+  const data = getTableData(blockId);
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = JSON.stringify(data);
+  clearTimeout(saveTimers[blockId]);
+  saveTimers[blockId] = setTimeout(() => {
+    api('/blocks/'+blockId, {method:'PUT', body:{content:JSON.stringify(data)}});
+  }, 500);
+}
+
+function tableAddRow(blockId){
+  const data = getTableData(blockId);
+  const cols = data[0]?.length || 3;
+  data.push(Array(cols).fill(''));
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = JSON.stringify(data);
+  api('/blocks/'+blockId, {method:'PUT', body:{content:JSON.stringify(data)}});
+  renderPage();
+}
+
+function tableAddCol(blockId){
+  const data = getTableData(blockId);
+  data.forEach((row,i) => row.push(i===0 ? 'New' : ''));
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = JSON.stringify(data);
+  api('/blocks/'+blockId, {method:'PUT', body:{content:JSON.stringify(data)}});
+  renderPage();
+}
+
+function tableDelRow(blockId){
+  const data = getTableData(blockId);
+  if(data.length <= 2) return;
+  data.pop();
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = JSON.stringify(data);
+  api('/blocks/'+blockId, {method:'PUT', body:{content:JSON.stringify(data)}});
+  renderPage();
+}
+
+function tableDelCol(blockId){
+  const data = getTableData(blockId);
+  if(data[0]?.length <= 1) return;
+  data.forEach(row => row.pop());
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = JSON.stringify(data);
+  api('/blocks/'+blockId, {method:'PUT', body:{content:JSON.stringify(data)}});
+  renderPage();
+}
+
+// ── Image Blocks ──
+function setImageUrl(blockId){
+  const url = prompt('Enter image URL:');
+  if(!url) return;
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = url;
+  api('/blocks/'+blockId, {method:'PUT', body:{content:url}});
+  renderPage();
+}
+
+function saveImageCaption(blockId, caption){
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(!b) return;
+  const props = typeof b.properties === 'string' ? JSON.parse(b.properties||'{}') : (b.properties||{});
+  props.caption = caption;
+  b.properties = props;
+  clearTimeout(saveTimers['cap'+blockId]);
+  saveTimers['cap'+blockId] = setTimeout(() => {
+    api('/blocks/'+blockId, {method:'PUT', body:{properties:props}});
+  }, 500);
+}
+
+// ── Embed Blocks ──
+function setEmbedUrl(blockId){
+  const url = prompt('Enter URL to embed (YouTube, Google Maps, etc.):');
+  if(!url) return;
+  const b = currentBlocks.find(b=>b.id===blockId);
+  if(b) b.content = url;
+  api('/blocks/'+blockId, {method:'PUT', body:{content:url}});
+  renderPage();
+}
+
 // ── Slash Menu ──
 let slashEl = null;
 function showSlashMenu(el, blockId){
@@ -951,6 +1180,11 @@ async function selectSlashItem(type){
   block.content = '';
   block.type = type;
   
+  // Set initial content for special types
+  if(type === 'columns_2') block.content = JSON.stringify(['','']);
+  if(type === 'columns_3') block.content = JSON.stringify(['','','']);
+  if(type === 'table') block.content = JSON.stringify([['Header 1','Header 2','Header 3'],['','','']]);
+  
   if(type === 'page_link'){
     const newPage = await api('/pages', {method:'POST', body:{title:'Untitled', parent_id:currentPage.id}});
     block.content = newPage.id;
@@ -964,7 +1198,7 @@ async function selectSlashItem(type){
   // Render immediately with cleared state, then save to API
   renderPage();
   setTimeout(() => focusBlock(block.id), 20);
-  api('/blocks/'+block.id, {method:'PUT', body:{type, content:''}});
+  api('/blocks/'+block.id, {method:'PUT', body:{type, content:block.content}});
 }
 
 // ── Title ──
