@@ -2809,7 +2809,13 @@ async function submitResearch(){
     });
     clearTimeout(timer);
     clearInterval(progressTimer);
-    const data = await res.json();
+    const rawText = await res.text();
+    let data;
+    try { data = JSON.parse(rawText); } catch(pe){
+      loadDiv.remove();
+      alert('Research failed: server returned invalid response (possibly a tunnel timeout). Try again or use a simpler topic.');
+      return;
+    }
     loadDiv.remove();
     if(data.error){
       alert('Research error: ' + data.error);
