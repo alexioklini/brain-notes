@@ -336,6 +336,26 @@ a{color:var(--cyan);text-decoration:none}
 .pe-select-opt:hover{border-color:var(--border-hover)}
 .pe-select-opt.selected{border-color:var(--cyan)}
 
+/* ═══ AI Inline Toolbar ═══ */
+#ai-toolbar{display:none;position:absolute;z-index:180;background:var(--bg3);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);padding:4px;animation:menuIn 100ms ease-out}
+#ai-toolbar.open{display:flex;flex-direction:column;gap:0}
+.ai-tb-row{display:flex;gap:0}
+.ai-tb-btn{background:none;border:none;color:var(--text2);cursor:pointer;padding:6px 10px;font-size:12px;font-family:inherit;border-radius:6px;transition:all 80ms;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.ai-tb-btn:hover{background:var(--card-hover);color:var(--cyan)}
+.ai-tb-sep{width:1px;background:var(--border);margin:4px 0;align-self:stretch}
+.ai-tb-divider{height:1px;background:var(--border);margin:2px 4px}
+.ai-tb-label{font-size:10px;color:var(--text4);padding:2px 10px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.ai-loading{display:flex;align-items:center;gap:8px;padding:8px 12px;color:var(--cyan);font-size:12px}
+.ai-loading .typing-dots span{background:var(--cyan)}
+
+/* AI Translate Modal */
+#ai-translate-modal{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);align-items:center;justify-content:center}
+#ai-translate-modal.open{display:flex}
+.translate-dialog{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;width:360px;box-shadow:0 16px 48px rgba(0,0,0,.5)}
+.translate-dialog h3{margin:0 0 16px;font-size:16px}
+.translate-dialog select{width:100%;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:16px;font-family:inherit;outline:none}
+.translate-dialog .btns{display:flex;gap:8px;justify-content:flex-end}
+
 /* ═══ Chat Panel ═══ */
 #chat-panel{position:fixed;right:-420px;top:0;bottom:0;width:420px;z-index:250;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;transition:right 200ms ease;box-shadow:-8px 0 32px rgba(0,0,0,.4)}
 #chat-panel.open{right:0}
@@ -467,6 +487,62 @@ a{color:var(--cyan);text-decoration:none}
 <!-- Icon Picker -->
 <div id="icon-picker"></div>
 
+<!-- AI Inline Toolbar -->
+<div id="ai-toolbar">
+  <div class="ai-tb-label">AI Edit</div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="aiInline('improve')"><i data-lucide="sparkles" style="width:12px;height:12px"></i> Improve</button>
+    <button class="ai-tb-btn" onclick="aiInline('fix_grammar')"><i data-lucide="check" style="width:12px;height:12px"></i> Fix grammar</button>
+    <button class="ai-tb-btn" onclick="aiInline('shorter')"><i data-lucide="minus" style="width:12px;height:12px"></i> Shorter</button>
+    <button class="ai-tb-btn" onclick="aiInline('longer')"><i data-lucide="plus" style="width:12px;height:12px"></i> Longer</button>
+  </div>
+  <div class="ai-tb-divider"></div>
+  <div class="ai-tb-label">Tone</div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="aiInline('professional')"><i data-lucide="briefcase" style="width:12px;height:12px"></i> Professional</button>
+    <button class="ai-tb-btn" onclick="aiInline('casual')"><i data-lucide="smile" style="width:12px;height:12px"></i> Casual</button>
+    <button class="ai-tb-btn" onclick="aiInline('simplify')"><i data-lucide="book-open" style="width:12px;height:12px"></i> Simplify</button>
+  </div>
+  <div class="ai-tb-divider"></div>
+  <div class="ai-tb-label">Generate</div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="aiInline('explain')"><i data-lucide="lightbulb" style="width:12px;height:12px"></i> Explain</button>
+    <button class="ai-tb-btn" onclick="aiInline('summarize')"><i data-lucide="list" style="width:12px;height:12px"></i> Summarize</button>
+    <button class="ai-tb-btn" onclick="aiInline('action_items')"><i data-lucide="list-checks" style="width:12px;height:12px"></i> Actions</button>
+    <button class="ai-tb-btn" onclick="aiInline('continue')"><i data-lucide="arrow-right" style="width:12px;height:12px"></i> Continue</button>
+  </div>
+  <div class="ai-tb-divider"></div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="showTranslateModal('inline')"><i data-lucide="languages" style="width:12px;height:12px"></i> Translate</button>
+    <button class="ai-tb-btn" onclick="showAiPrompt()"><i data-lucide="message-circle" style="width:12px;height:12px"></i> Custom...</button>
+  </div>
+</div>
+
+<!-- AI Translate Modal -->
+<div id="ai-translate-modal">
+  <div class="translate-dialog">
+    <h3><i data-lucide="languages" style="width:18px;height:18px;vertical-align:middle"></i> Translate</h3>
+    <select id="translate-lang">
+      <option value="English">English</option>
+      <option value="German">Deutsch</option>
+      <option value="French">Français</option>
+      <option value="Spanish">Español</option>
+      <option value="Italian">Italiano</option>
+      <option value="Portuguese">Português</option>
+      <option value="Japanese">日本語</option>
+      <option value="Chinese">中文</option>
+      <option value="Korean">한국어</option>
+      <option value="Russian">Русский</option>
+      <option value="Arabic">العربية</option>
+      <option value="Hindi">हिन्दी</option>
+    </select>
+    <div class="btns">
+      <button class="btn btn-ghost" onclick="closeTranslateModal()">Cancel</button>
+      <button class="btn" style="background:var(--cyan);color:#0d0d0d" onclick="executeTranslate()">Translate</button>
+    </div>
+  </div>
+</div>
+
 <!-- Chat Panel -->
 <div id="chat-panel">
   <div class="chat-header">
@@ -583,6 +659,18 @@ const BLOCK_TYPES = [
     {type:'numbered',icon:'1.',name:'Numbered List',desc:'Numbered list'},
     {type:'todo',icon:'☑',name:'To-do',desc:'Track tasks with checkboxes'},
     {type:'toggle',icon:'▶',name:'Toggle',desc:'Collapsible content'},
+  ]},
+  {section:'AI', items:[
+    {type:'ai_summarize',icon:'✨',name:'AI Summarize',desc:'Summarize this page'},
+    {type:'ai_action_items',icon:'✅',name:'AI Action Items',desc:'Extract action items'},
+    {type:'ai_key_points',icon:'💡',name:'AI Key Points',desc:'Extract key points'},
+    {type:'ai_explain',icon:'📖',name:'AI Explain',desc:'Explain this page simply'},
+    {type:'ai_continue',icon:'→',name:'AI Continue',desc:'Continue writing'},
+    {type:'ai_outline',icon:'📋',name:'AI Outline',desc:'Generate an outline'},
+    {type:'ai_brainstorm',icon:'🧠',name:'AI Brainstorm',desc:'Brainstorm ideas'},
+    {type:'ai_translate',icon:'🌍',name:'AI Translate Page',desc:'Translate entire page'},
+    {type:'ai_research',icon:'🔬',name:'AI Research',desc:'Deep research on a topic'},
+    {type:'ai_custom',icon:'💬',name:'AI Write...',desc:'Custom AI prompt'},
   ]},
   {section:'Layout', items:[
     {type:'columns_2',icon:'▐▌',name:'2 Columns',desc:'Side by side layout'},
@@ -1254,6 +1342,17 @@ async function selectSlashItem(type){
   // Clear content in local state FIRST
   block.content = '';
   block.type = type;
+  
+  // AI block commands
+  if(type.startsWith('ai_')){
+    hideSlashMenu();
+    // Reset the block back to text
+    block.type = 'text';
+    block.content = '';
+    renderPage();
+    aiBlockCommand(type);
+    return;
+  }
   
   // Set initial content for special types
   if(type === 'columns_2') block.content = JSON.stringify(['','']);
@@ -1945,6 +2044,290 @@ function dbMenu(e, dbId){
   document.body.appendChild(menu);
   setTimeout(() => document.addEventListener('click', function rm(){ document.body.contains(menu) && document.body.removeChild(menu); document.removeEventListener('click',rm); }), 10);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// AI INLINE & BLOCK FEATURES
+// ═══════════════════════════════════════════════════════════════
+
+let aiSelectedText = '';
+let aiSelectedBlock = null;
+let translateMode = 'inline'; // 'inline' or 'page'
+
+// Show AI toolbar on text selection (alongside format bar)
+function showAiToolbar(){
+  const sel = window.getSelection();
+  if(!sel || sel.isCollapsed || !sel.toString().trim()) { hideAiToolbar(); return; }
+  
+  const block = sel.anchorNode?.closest?.('[data-block-id]') || sel.anchorNode?.parentElement?.closest?.('[data-block-id]');
+  if(!block) { hideAiToolbar(); return; }
+  
+  aiSelectedText = sel.toString().trim();
+  aiSelectedBlock = block.dataset.blockId;
+  
+  const toolbar = document.getElementById('ai-toolbar');
+  const range = sel.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  
+  // Position below the format bar
+  toolbar.style.left = Math.max(10, rect.left) + 'px';
+  toolbar.style.top = (rect.bottom + 44) + 'px';
+  toolbar.classList.add('open');
+  lucide.createIcons();
+}
+
+function hideAiToolbar(){
+  document.getElementById('ai-toolbar').classList.remove('open');
+}
+
+// AI Inline action
+async function aiInline(action, language){
+  if(!aiSelectedText) return;
+  
+  const toolbar = document.getElementById('ai-toolbar');
+  toolbar.innerHTML = '<div class="ai-loading"><div class="typing-dots"><span></span><span></span><span></span></div> AI working...</div>';
+  
+  try {
+    const res = await fetch('/api/ai/inline', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: aiSelectedText, action, language: language || 'English'})
+    });
+    const data = await res.json();
+    
+    if(data.error){
+      alert('AI Error: ' + data.error);
+      hideAiToolbar();
+      restoreAiToolbar();
+      return;
+    }
+    
+    // For actions that generate new content (explain, summarize, action_items, key_points), add as new block
+    if(['explain','summarize','action_items','key_points','continue'].includes(action)){
+      if(aiSelectedBlock){
+        const afterId = aiSelectedBlock;
+        // Parse result into blocks
+        const lines = data.result.split('\n').filter(l => l.trim());
+        for(let i = 0; i < lines.length; i++){
+          const line = lines[i];
+          let type = 'text';
+          let content = line;
+          if(line.startsWith('- ') || line.startsWith('* ')){ type = 'bullet'; content = line.slice(2); }
+          else if(/^\d+\.\s/.test(line)){ type = 'numbered'; content = line.replace(/^\d+\.\s/,''); }
+          
+          const block = await api('/pages/'+currentPage.id+'/blocks', {
+            method: 'POST',
+            body: {type, content, after_id: i === 0 ? afterId : currentBlocks[currentBlocks.length-1]?.id}
+          });
+          currentBlocks.push(block);
+        }
+        renderPage();
+      }
+    } else {
+      // Replace selected text
+      const sel = window.getSelection();
+      if(sel.rangeCount > 0){
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(data.result));
+        // Save the block
+        const el = document.querySelector(`[data-block-id="${aiSelectedBlock}"]`);
+        if(el) saveBlock(aiSelectedBlock, el.innerText);
+      }
+    }
+  } catch(e){
+    alert('AI Error: ' + e.message);
+  }
+  
+  hideAiToolbar();
+  restoreAiToolbar();
+}
+
+function restoreAiToolbar(){
+  document.getElementById('ai-toolbar').innerHTML = `
+  <div class="ai-tb-label">AI Edit</div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="aiInline('improve')"><i data-lucide="sparkles" style="width:12px;height:12px"></i> Improve</button>
+    <button class="ai-tb-btn" onclick="aiInline('fix_grammar')"><i data-lucide="check" style="width:12px;height:12px"></i> Fix grammar</button>
+    <button class="ai-tb-btn" onclick="aiInline('shorter')"><i data-lucide="minus" style="width:12px;height:12px"></i> Shorter</button>
+    <button class="ai-tb-btn" onclick="aiInline('longer')"><i data-lucide="plus" style="width:12px;height:12px"></i> Longer</button>
+  </div>
+  <div class="ai-tb-divider"></div>
+  <div class="ai-tb-label">Tone</div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="aiInline('professional')"><i data-lucide="briefcase" style="width:12px;height:12px"></i> Professional</button>
+    <button class="ai-tb-btn" onclick="aiInline('casual')"><i data-lucide="smile" style="width:12px;height:12px"></i> Casual</button>
+    <button class="ai-tb-btn" onclick="aiInline('simplify')"><i data-lucide="book-open" style="width:12px;height:12px"></i> Simplify</button>
+  </div>
+  <div class="ai-tb-divider"></div>
+  <div class="ai-tb-label">Generate</div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="aiInline('explain')"><i data-lucide="lightbulb" style="width:12px;height:12px"></i> Explain</button>
+    <button class="ai-tb-btn" onclick="aiInline('summarize')"><i data-lucide="list" style="width:12px;height:12px"></i> Summarize</button>
+    <button class="ai-tb-btn" onclick="aiInline('action_items')"><i data-lucide="list-checks" style="width:12px;height:12px"></i> Actions</button>
+    <button class="ai-tb-btn" onclick="aiInline('continue')"><i data-lucide="arrow-right" style="width:12px;height:12px"></i> Continue</button>
+  </div>
+  <div class="ai-tb-divider"></div>
+  <div class="ai-tb-row">
+    <button class="ai-tb-btn" onclick="showTranslateModal('inline')"><i data-lucide="languages" style="width:12px;height:12px"></i> Translate</button>
+    <button class="ai-tb-btn" onclick="showAiPrompt()"><i data-lucide="message-circle" style="width:12px;height:12px"></i> Custom...</button>
+  </div>`;
+  lucide.createIcons();
+}
+
+// Show translate modal
+function showTranslateModal(mode){
+  translateMode = mode;
+  document.getElementById('ai-translate-modal').classList.add('open');
+  lucide.createIcons();
+}
+function closeTranslateModal(){
+  document.getElementById('ai-translate-modal').classList.remove('open');
+}
+async function executeTranslate(){
+  const lang = document.getElementById('translate-lang').value;
+  closeTranslateModal();
+  
+  if(translateMode === 'inline'){
+    await aiInline('translate', lang);
+  } else if(translateMode === 'page' && currentPage){
+    // Translate entire page
+    const res = await fetch('/api/ai/translate-page', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({page_id: currentPage.id, language: lang})
+    });
+    const data = await res.json();
+    if(data.page_id){
+      await refreshPages();
+      loadPage(data.page_id);
+    }
+  }
+}
+
+// Custom AI prompt
+function showAiPrompt(){
+  const prompt = window.prompt('Enter your AI instruction:');
+  if(prompt){
+    aiInline('custom');
+    // Override with custom — need to pass prompt via API
+    fetch('/api/ai/inline', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: aiSelectedText, action: 'custom', prompt})
+    }).then(r => r.json()).then(data => {
+      if(data.result){
+        const sel = window.getSelection();
+        if(sel.rangeCount > 0){
+          const range = sel.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(document.createTextNode(data.result));
+          const el = document.querySelector(`[data-block-id="${aiSelectedBlock}"]`);
+          if(el) saveBlock(aiSelectedBlock, el.innerText);
+        }
+      }
+    });
+  }
+  hideAiToolbar();
+  restoreAiToolbar();
+}
+
+// AI Block commands (from slash menu)
+async function aiBlockCommand(action){
+  if(!currentPage) return;
+  
+  if(action === 'ai_translate'){
+    showTranslateModal('page');
+    return;
+  }
+  
+  if(action === 'ai_research'){
+    const topic = window.prompt('Research topic:');
+    if(!topic) return;
+    // Show loading indicator
+    const area = document.getElementById('page-area');
+    const loadDiv = document.createElement('div');
+    loadDiv.className = 'ai-loading';
+    loadDiv.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div> AI researching "'+topic+'"...';
+    loadDiv.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);padding:12px 20px;border-radius:10px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+    document.body.appendChild(loadDiv);
+    
+    try {
+      const res = await fetch('/api/ai/research', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({topic})
+      });
+      const data = await res.json();
+      loadDiv.remove();
+      if(data.page_id){
+        await refreshPages();
+        loadPage(data.page_id);
+      }
+    } catch(e){
+      loadDiv.remove();
+      alert('Research failed: ' + e.message);
+    }
+    return;
+  }
+  
+  if(action === 'ai_custom'){
+    const prompt = window.prompt('What should AI write?');
+    if(!prompt) return;
+    action = 'custom';
+    const res = await fetch('/api/ai/block', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action:'custom', page_id: currentPage.id, prompt})
+    });
+    const data = await res.json();
+    if(data.result) insertAiResult(data.result);
+    return;
+  }
+  
+  // Standard AI block actions
+  const cleanAction = action.replace('ai_','');
+  const res = await fetch('/api/ai/block', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: cleanAction, page_id: currentPage.id})
+  });
+  const data = await res.json();
+  if(data.result) insertAiResult(data.result);
+}
+
+async function insertAiResult(text){
+  const lines = text.split('\n').filter(l => l.trim());
+  for(const line of lines){
+    let type = 'text', content = line;
+    if(line.startsWith('### ')){ type = 'h3'; content = line.slice(4); }
+    else if(line.startsWith('## ')){ type = 'h2'; content = line.slice(3); }
+    else if(line.startsWith('# ')){ type = 'h1'; content = line.slice(2); }
+    else if(line.startsWith('- ') || line.startsWith('* ')){ type = 'bullet'; content = line.slice(2); }
+    else if(/^\d+\.\s/.test(line)){ type = 'numbered'; content = line.replace(/^\d+\.\s/,''); }
+    else if(line.startsWith('> ')){ type = 'quote'; content = line.slice(2); }
+    
+    const block = await api('/pages/'+currentPage.id+'/blocks', {
+      method: 'POST',
+      body: {type, content}
+    });
+    currentBlocks.push(block);
+  }
+  renderPage();
+}
+
+// Hook AI toolbar into selection change
+let aiToolbarTimeout;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(aiToolbarTimeout);
+  aiToolbarTimeout = setTimeout(() => {
+    const sel = window.getSelection();
+    if(sel && !sel.isCollapsed && sel.toString().trim().length > 3){
+      showAiToolbar();
+    } else {
+      hideAiToolbar();
+    }
+  }, 300);
+});
 
 // ═══════════════════════════════════════════════════════════════
 // CHAT AI AGENT

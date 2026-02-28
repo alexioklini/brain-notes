@@ -681,6 +681,293 @@ def search():
                        'icon': i['icon'], 'database_id': i['database_id'], 'db_title': i['db_title']})
     return jsonify(results)
 
+# ── AI Inline & Block Actions ──────────────────────────────────────────────
+
+@app.route('/api/ai/inline', methods=['POST'])
+def ai_inline():
+    """AI text transformation on selected text."""
+    data = request.get_json(force=True)
+    text = data.get('text', '').strip()
+    action = data.get('action', '')
+    language = data.get('language', 'English')
+    custom_prompt = data.get('prompt', '')
+    
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+    
+    prompts = {
+        'improve': f'Improve the writing quality of this text. Make it clearer and more polished. Return ONLY the improved text, nothing else:\n\n{text}',
+        'fix_grammar': f'Fix all grammar and spelling errors in this text. Return ONLY the corrected text, nothing else:\n\n{text}',
+        'shorter': f'Make this text more concise while keeping the key meaning. Return ONLY the shortened text, nothing else:\n\n{text}',
+        'longer': f'Expand this text with more detail and explanation. Return ONLY the expanded text, nothing else:\n\n{text}',
+        'simplify': f'Simplify this text so it is easy to understand. Use simple words. Return ONLY the simplified text, nothing else:\n\n{text}',
+        'professional': f'Rewrite this text in a professional, formal tone. Return ONLY the rewritten text, nothing else:\n\n{text}',
+        'casual': f'Rewrite this text in a casual, friendly tone. Return ONLY the rewritten text, nothing else:\n\n{text}',
+        'translate': f'Translate this text to {language}. Return ONLY the translation, nothing else:\n\n{text}',
+        'explain': f'Explain this text clearly in simple terms:\n\n{text}',
+        'summarize': f'Provide a concise summary of this text:\n\n{text}',
+        'action_items': f'Extract action items from this text as a bullet list. Each item should start with "- ". Return ONLY the bullet list:\n\n{text}',
+        'key_points': f'Extract the key points from this text as a bullet list. Each item should start with "- ". Return ONLY the bullet list:\n\n{text}',
+        'continue': f'Continue writing from where this text leaves off. Match the style and tone. Return ONLY the continuation:\n\n{text}',
+        'custom': f'{custom_prompt}\n\n{text}' if custom_prompt else text,
+    }
+    
+    prompt = prompts.get(action, prompts.get('improve'))
+    
+    try:
+        api_config = get_api_config()
+        result = call_claude(api_config, 'You are a helpful writing assistant. Follow instructions precisely. Be concise.', 
+                           [{"role": "user", "content": prompt}])
+        
+        response_text = ''
+        for block in result.get('content', []):
+            if block.get('type') == 'text':
+                response_text += block['text']
+        
+        return jsonify({'result': response_text.strip(), 'action': action})
+    except Exception as e:
+        logger.error(f"AI inline error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai/block', methods=['POST'])
+def ai_block():
+    """Generate AI content for a block based on page context."""
+    data = request.get_json(force=True)
+    action = data.get('action', '')
+    page_id = data.get('page_id', '')
+    block_id = data.get('block_id', '')
+    prompt = data.get('prompt', '')
+    language = data.get('language', 'English')
+    
+    # Get page context
+    page_context = ''
+    if page_id:
+        with get_db() as conn:
+            page = conn.execute("SELECT title FROM pages WHERE id=?", (page_id,)).fetchone()
+            blocks = conn.execute(
+                "SELECT type, content FROM blocks WHERE page_id=? ORDER BY sort_order", (page_id,)
+            ).fetchall()
+            if page:
+                page_context = f"Page: {page['title']}\n"
+                page_context += '\n'.join(b['content'] for b in blocks if b['content'])
+    
+    prompts = {
+        'summarize': f'Summarize the following page content concisely:\n\n{page_context}',
+        'action_items': f'Extract action items from this page as a bullet list (each line starts with "- "):\n\n{page_context}',
+        'key_points': f'Extract key points from this page as a bullet list (each line starts with "- "):\n\n{page_context}',
+        'explain': f'Explain the content of this page in simple terms:\n\n{page_context}',
+        'translate': f'Translate the following content to {language}:\n\n{page_context}',
+        'continue': f'Continue writing based on this content. Match the style:\n\n{page_context}',
+        'outline': f'Create a detailed outline for this topic:\n\n{prompt or page_context}',
+        'brainstorm': f'Brainstorm ideas related to this topic. Return as a bullet list:\n\n{prompt or page_context}',
+        'pros_cons': f'List pros and cons for this topic. Format as "Pros:" and "Cons:" sections with bullets:\n\n{prompt or page_context}',
+        'custom': prompt,
+    }
+    
+    ai_prompt = prompts.get(action, prompt or page_context)
+    
+    try:
+        api_config = get_api_config()
+        result = call_claude(api_config, 'You are a helpful writing assistant integrated into a note-taking app. Be concise and well-structured.',
+                           [{"role": "user", "content": ai_prompt}])
+        
+        response_text = ''
+        for block in result.get('content', []):
+            if block.get('type') == 'text':
+                response_text += block['text']
+        
+        return jsonify({'result': response_text.strip(), 'action': action})
+    except Exception as e:
+        logger.error(f"AI block error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai/research', methods=['POST'])
+def ai_research():
+    """AI Research — generate a comprehensive research page on a topic."""
+    data = request.get_json(force=True)
+    topic = data.get('topic', '').strip()
+    
+    if not topic:
+        return jsonify({'error': 'No topic provided'}), 400
+    
+    try:
+        api_config = get_api_config()
+        prompt = f"""Research the following topic thoroughly and create a comprehensive, well-structured report.
+
+Topic: {topic}
+
+Create the report with:
+1. An executive summary
+2. Key findings organized by subtopics
+3. Important details and data points
+4. Conclusions or recommendations
+
+Format your response as structured content that can be broken into blocks.
+Use markdown headers (##, ###), bullet points, and clear paragraphs.
+Be factual, thorough, and cite specific information where possible."""
+
+        result = call_claude(api_config, 
+                           'You are a research assistant. Provide thorough, well-structured research reports. Use your knowledge to be as comprehensive as possible.',
+                           [{"role": "user", "content": prompt}])
+        
+        response_text = ''
+        for block in result.get('content', []):
+            if block.get('type') == 'text':
+                response_text += block['text']
+        
+        # Parse markdown into blocks
+        blocks = parse_markdown_to_blocks(response_text.strip())
+        
+        # Create page with blocks
+        page_id = gen_id()
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO pages (id, title, icon, workspace, sort_order) VALUES (?,?,?,'docs',0)",
+                (page_id, f"Research: {topic}", 'search')
+            )
+            for i, block in enumerate(blocks):
+                bid = gen_id()
+                conn.execute(
+                    "INSERT INTO blocks (id, page_id, type, content, sort_order) VALUES (?,?,?,?,?)",
+                    (bid, page_id, block['type'], block['content'], i)
+                )
+            conn.commit()
+        
+        return jsonify({'page_id': page_id, 'title': f"Research: {topic}", 'blocks': len(blocks)})
+    except Exception as e:
+        logger.error(f"AI research error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def parse_markdown_to_blocks(text):
+    """Convert markdown text to block array."""
+    blocks = []
+    lines = text.split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
+        # Code blocks
+        if line.strip().startswith('```'):
+            code_lines = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith('```'):
+                code_lines.append(lines[i])
+                i += 1
+            blocks.append({'type': 'code', 'content': '\n'.join(code_lines)})
+            i += 1
+            continue
+        
+        # Headers
+        if line.startswith('### '):
+            blocks.append({'type': 'h3', 'content': line[4:].strip()})
+        elif line.startswith('## '):
+            blocks.append({'type': 'h2', 'content': line[3:].strip()})
+        elif line.startswith('# '):
+            blocks.append({'type': 'h1', 'content': line[2:].strip()})
+        # Bullets
+        elif line.strip().startswith('- ') or line.strip().startswith('* '):
+            content = line.strip()[2:]
+            blocks.append({'type': 'bullet', 'content': content})
+        # Numbered
+        elif re.match(r'^\d+\.\s', line.strip()):
+            content = re.sub(r'^\d+\.\s', '', line.strip())
+            blocks.append({'type': 'numbered', 'content': content})
+        # Blockquote
+        elif line.strip().startswith('> '):
+            blocks.append({'type': 'quote', 'content': line.strip()[2:]})
+        # Divider
+        elif line.strip() in ('---', '***', '___'):
+            blocks.append({'type': 'divider', 'content': ''})
+        # Regular text (skip empty lines)
+        elif line.strip():
+            blocks.append({'type': 'text', 'content': line.strip()})
+        
+        i += 1
+    
+    return blocks if blocks else [{'type': 'text', 'content': text}]
+
+
+@app.route('/api/ai/translate-page', methods=['POST'])
+def translate_page():
+    """Translate entire page to a language and create a new page."""
+    data = request.get_json(force=True)
+    page_id = data.get('page_id', '')
+    language = data.get('language', 'English')
+    
+    if not page_id:
+        return jsonify({'error': 'No page_id'}), 400
+    
+    with get_db() as conn:
+        page = conn.execute("SELECT * FROM pages WHERE id=?", (page_id,)).fetchone()
+        if not page:
+            return jsonify({'error': 'Page not found'}), 404
+        blocks = conn.execute(
+            "SELECT * FROM blocks WHERE page_id=? ORDER BY sort_order", (page_id,)
+        ).fetchall()
+    
+    # Collect all text content
+    content_parts = []
+    for b in blocks:
+        if b['content']:
+            content_parts.append(f"[{b['type']}] {b['content']}")
+    
+    try:
+        api_config = get_api_config()
+        prompt = f"""Translate the following content to {language}. 
+Maintain the exact same structure. Each line starts with [type] prefix — keep those prefixes unchanged.
+Return ONLY the translated lines, one per line, with the same [type] prefixes.
+
+{chr(10).join(content_parts)}"""
+
+        result = call_claude(api_config, 'You are a translator. Translate precisely, keeping structure markers intact.',
+                           [{"role": "user", "content": prompt}])
+        
+        response_text = ''
+        for block in result.get('content', []):
+            if block.get('type') == 'text':
+                response_text += block['text']
+        
+        # Parse response back to blocks
+        new_page_id = gen_id()
+        translated_title = f"{page['title']} ({language})"
+        
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO pages (id, title, icon, workspace, sort_order) VALUES (?,?,?,?,0)",
+                (new_page_id, translated_title, page['icon'], page['workspace'] or 'docs')
+            )
+            
+            translated_lines = response_text.strip().split('\n')
+            original_blocks = list(blocks)
+            
+            for i, ob in enumerate(original_blocks):
+                bid = gen_id()
+                # Try to match translated line
+                content = ob['content']
+                if i < len(translated_lines):
+                    tl = translated_lines[i]
+                    # Strip [type] prefix if present
+                    m = re.match(r'\[(\w+)\]\s*(.*)', tl)
+                    if m:
+                        content = m.group(2)
+                    else:
+                        content = tl
+                
+                conn.execute(
+                    "INSERT INTO blocks (id, page_id, type, content, properties, sort_order, indent_level) VALUES (?,?,?,?,?,?,?)",
+                    (bid, new_page_id, ob['type'], content, ob['properties'], ob['sort_order'], ob['indent_level'])
+                )
+            conn.commit()
+        
+        return jsonify({'page_id': new_page_id, 'title': translated_title})
+    except Exception as e:
+        logger.error(f"AI translate page error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ── AI Chat Agent ──────────────────────────────────────────────────────────
 
 import httpx, re
