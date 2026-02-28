@@ -2243,6 +2243,144 @@ function showAiToolbarForSelection(){
   lucide.createIcons();
 }
 
+// Multi-block clipboard
+let clipboardBlocks = [];
+
+async function deleteSelectedBlocks(){
+  if(selectedBlockIds.length === 0) return;
+  const ids = [...selectedBlockIds];
+  // Find block to focus after delete
+  const wrappers = getBlockWrappers();
+  const lastIdx = wrappers.findIndex(w => w.dataset.id === ids[ids.length - 1]);
+  let focusId = null;
+  for(let i = lastIdx + 1; i < wrappers.length; i++){
+    const bid = wrappers[i].dataset.id;
+    if(!ids.includes(bid)){ focusId = bid; break; }
+  }
+  if(!focusId){
+    for(let i = wrappers.findIndex(w => w.dataset.id === ids[0]) - 1; i >= 0; i--){
+      const bid = wrappers[i].dataset.id;
+      if(!ids.includes(bid)){ focusId = bid; break; }
+    }
+  }
+  
+  // Delete all
+  for(const id of ids){
+    currentBlocks = currentBlocks.filter(b => b.id !== id);
+    api('/blocks/' + id, {method: 'DELETE'});
+  }
+  clearBlockSelection();
+  hideAiToolbar();
+  renderPage();
+  if(focusId) setTimeout(() => focusBlock(focusId, false), 20);
+}
+
+function copySelectedBlocks(){
+  if(selectedBlockIds.length === 0) return;
+  clipboardBlocks = selectedBlockIds.map(id => {
+    const b = currentBlocks.find(bl => bl.id === id);
+    return b ? {type: b.type, content: b.content, properties: b.properties, indent_level: b.indent_level} : null;
+  }).filter(Boolean);
+  
+  // Also set plain text clipboard
+  const text = getSelectedContent();
+  navigator.clipboard.writeText(text).catch(() => {});
+}
+
+async function cutSelectedBlocks(){
+  copySelectedBlocks();
+  await deleteSelectedBlocks();
+}
+
+async function pasteBlocksAfter(afterId){
+  if(clipboardBlocks.length === 0) return;
+  let insertAfter = afterId;
+  for(const b of clipboardBlocks){
+    const newBlock = await api('/pages/' + currentPage.id + '/blocks', {
+      method: 'POST',
+      body: {type: b.type, content: b.content, properties: b.properties, indent_level: b.indent_level, after_id: insertAfter}
+    });
+    // Insert into local state at correct position
+    const idx = currentBlocks.findIndex(bl => bl.id === insertAfter);
+    if(idx >= 0) currentBlocks.splice(idx + 1, 0, newBlock);
+    else currentBlocks.push(newBlock);
+    insertAfter = newBlock.id;
+  }
+  renderPage();
+}
+
+async function moveSelectedBlocks(direction){
+  if(selectedBlockIds.length === 0) return;
+  const ids = [...selectedBlockIds];
+  
+  // Find indices in currentBlocks
+  const indices = ids.map(id => currentBlocks.findIndex(b => b.id === id)).filter(i => i >= 0).sort((a,b) => a - b);
+  if(indices.length === 0) return;
+  
+  if(direction === 'up'){
+    if(indices[0] === 0) return; // already at top
+    const targetIdx = indices[0] - 1;
+    // Move target block after the selection
+    const [target] = currentBlocks.splice(targetIdx, 1);
+    const insertAt = indices[indices.length - 1]; // -1 because we removed one before
+    currentBlocks.splice(insertAt, 0, target);
+  } else {
+    if(indices[indices.length - 1] >= currentBlocks.length - 1) return; // already at bottom
+    const targetIdx = indices[indices.length - 1] + 1;
+    const [target] = currentBlocks.splice(targetIdx, 1);
+    currentBlocks.splice(indices[0], 0, target);
+  }
+  
+  // Save new order
+  const order = currentBlocks.map(b => b.id);
+  api('/pages/' + currentPage.id + '/blocks/reorder', {method: 'PUT', body: {order}});
+  renderPage();
+  // Re-select the same blocks
+  setTimeout(() => setBlockSelection(ids), 20);
+}
+
+// Keyboard shortcuts for multi-block operations
+document.addEventListener('keydown', e => {
+  if(selectedBlockIds.length === 0) return;
+  
+  // Delete / Backspace
+  if(e.key === 'Delete' || (e.key === 'Backspace' && selectedBlockIds.length > 1)){
+    e.preventDefault();
+    deleteSelectedBlocks();
+    return;
+  }
+  
+  // Cut: Cmd/Ctrl+X
+  if((e.metaKey || e.ctrlKey) && e.key === 'x'){
+    e.preventDefault();
+    cutSelectedBlocks();
+    return;
+  }
+  
+  // Copy: Cmd/Ctrl+C
+  if((e.metaKey || e.ctrlKey) && e.key === 'c' && selectedBlockIds.length > 1){
+    e.preventDefault();
+    copySelectedBlocks();
+    return;
+  }
+  
+  // Paste: Cmd/Ctrl+V (paste clipboard blocks after selection)
+  if((e.metaKey || e.ctrlKey) && e.key === 'v' && clipboardBlocks.length > 0 && selectedBlockIds.length > 0){
+    e.preventDefault();
+    const lastId = selectedBlockIds[selectedBlockIds.length - 1];
+    clearBlockSelection();
+    pasteBlocksAfter(lastId);
+    return;
+  }
+  
+  // Move: Alt+Arrow Up/Down
+  if(e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')){
+    e.preventDefault();
+    moveSelectedBlocks(e.key === 'ArrowUp' ? 'up' : 'down');
+    return;
+  }
+}, true); // capture phase to intercept before block handlers
+
 // ═══════════════════════════════════════════════════════════════
 // AI INLINE & BLOCK FEATURES
 // ═══════════════════════════════════════════════════════════════
