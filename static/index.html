@@ -552,6 +552,50 @@ function setupBlockListeners(){
       if(b && b.content !== el.innerText){ b.content = el.innerText; api('/blocks/'+bid, {method:'PUT', body:{content:el.innerText}}); }
     });
   });
+  // Drag & drop reorder
+  let dragBlockId = null;
+  document.querySelectorAll('.block-drag').forEach(handle => {
+    handle.addEventListener('dragstart', e => {
+      dragBlockId = handle.closest('.block').dataset.id;
+      handle.closest('.block').classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    handle.addEventListener('dragend', () => {
+      document.querySelectorAll('.block').forEach(b => b.classList.remove('dragging','drag-over-top','drag-over-bottom'));
+      dragBlockId = null;
+    });
+  });
+  document.querySelectorAll('.block').forEach(block => {
+    block.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = block.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      document.querySelectorAll('.block').forEach(b => b.classList.remove('drag-over-top','drag-over-bottom'));
+      block.classList.add(e.clientY < mid ? 'drag-over-top' : 'drag-over-bottom');
+    });
+    block.addEventListener('dragleave', () => {
+      block.classList.remove('drag-over-top','drag-over-bottom');
+    });
+    block.addEventListener('drop', e => {
+      e.preventDefault();
+      document.querySelectorAll('.block').forEach(b => b.classList.remove('drag-over-top','drag-over-bottom'));
+      const targetId = block.dataset.id;
+      if(!dragBlockId || !targetId || dragBlockId === targetId) return;
+      const rect = block.getBoundingClientRect();
+      const above = e.clientY < rect.top + rect.height / 2;
+      // Reorder in local state
+      const dragIdx = currentBlocks.findIndex(b => b.id === dragBlockId);
+      const [moved] = currentBlocks.splice(dragIdx, 1);
+      let targetIdx = currentBlocks.findIndex(b => b.id === targetId);
+      if(!above) targetIdx++;
+      currentBlocks.splice(targetIdx, 0, moved);
+      // Save new order
+      const order = currentBlocks.map(b => b.id);
+      api('/pages/'+currentPage.id+'/blocks/reorder', {method:'PUT', body:{order}});
+      renderPage();
+    });
+  });
   // Format bar on selection
   document.addEventListener('selectionchange', showFormatBar);
 }
