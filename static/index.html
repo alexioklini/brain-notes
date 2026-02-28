@@ -178,7 +178,9 @@ a{color:var(--cyan);text-decoration:none}
 .search-empty{padding:24px;text-align:center;color:var(--text4);font-size:13px}
 
 /* ═══ Icon Picker ═══ */
-#icon-picker{display:none;position:absolute;z-index:150;background:var(--bg3);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5);padding:12px;width:320px;animation:menuIn 100ms ease-out}
+#icon-picker{display:none;position:absolute;z-index:150;background:var(--bg3);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5);padding:12px;width:340px;animation:menuIn 100ms ease-out}
+.icon-cat-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 4px;padding:0 2px}
+.icon-cat-label:first-child{margin-top:0}
 #icon-picker.open{display:block}
 .icon-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-height:240px;overflow-y:auto}
 .icon-option{width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;border-radius:6px;transition:background var(--transition)}
@@ -319,7 +321,19 @@ const api = (path, opts={}) => fetch('/api'+path, {
   body: opts.body ? JSON.stringify(opts.body) : undefined
 }).then(r=>r.json());
 
-const ICONS = ['📝','📁','🎯','💡','🔥','⭐','🚀','📊','🎨','📌','💻','🔧','📚','🎵','🌍','🏠','❤️','⚡','🧪','📐','🗂️','📋','✅','🔍','💰','🎓','🔒','📈','🎮','🌱'];
+const ICON_CATEGORIES = {
+  'Documents': ['📄','📝','📋','📑','📃','📜','📰','🗒️','🗓️','📇','🗂️','📁','📂','🏷️','🔖'],
+  'Work': ['💼','🏢','📊','📈','📉','💹','🧾','🗃️','📎','✏️','🖊️','📐','📏','🧮','⚙️'],
+  'Tech': ['💻','🖥️','⌨️','🖱️','💾','📡','🔌','🔋','📱','🌐','🛜','🤖','🧑‍💻','🔗','⛓️'],
+  'Science': ['🧪','🔬','🧬','⚗️','🧫','🧲','🔭','🛰️','💊','🩺','🧠','🫀','🦠','🌡️','⚛️'],
+  'Creative': ['🎨','🖌️','✒️','🎭','📷','🎬','🎤','🎧','🎹','🎸','🎺','🎻','🎵','🎶','🎙️'],
+  'Education': ['📚','📖','🎓','🏫','📕','📗','📘','📙','🔎','🔍','💡','🧩','🗣️','🌏','📢'],
+  'Planning': ['🎯','✅','☑️','⭕','🔴','🟢','🟡','🔵','🟣','⏰','📅','⏳','🗺️','🧭','📍'],
+  'Finance': ['💰','💳','💵','🏦','💎','📦','🛒','🏪','💲','🪙','📤','📥','🧳','🎁','🏆'],
+  'Nature': ['🌱','🌿','🍃','🌳','🌸','🌺','🍀','🌊','🔥','⚡','❄️','🌙','☀️','⭐','🌈'],
+  'Symbols': ['🚀','🛡️','⚔️','🔑','🔒','🔓','❤️','💜','🧡','💚','💙','🤍','🖤','♾️','🪶']
+};
+const ICONS = Object.values(ICON_CATEGORIES).flat();
 
 const BLOCK_TYPES = [
   {section:'Basic', items:[
@@ -800,9 +814,23 @@ function openIconPicker(el, pageId){
   const rect = el.getBoundingClientRect();
   picker.style.left = rect.left + 'px';
   picker.style.top = (rect.bottom + 4) + 'px';
-  picker.innerHTML = `<div style="margin-bottom:8px;font-size:12px;color:var(--text3)">Choose an icon</div>
-    <div class="icon-grid">${ICONS.map(i => `<div class="icon-option" onclick="selectIcon('${pageId}','${i}')">${i}</div>`).join('')}</div>
-    <button class="btn btn-ghost" style="margin-top:8px;width:100%;font-size:12px" onclick="selectIcon('${pageId}','')">Remove icon</button>`;
+  const cats = Object.entries(ICON_CATEGORIES).map(([cat,icons]) => 
+    `<div class="icon-cat-label">${cat}</div><div class="icon-grid">${icons.map(i => `<div class="icon-option" onmousedown="event.preventDefault();selectIcon('${pageId}','${i}')">${i}</div>`).join('')}</div>`
+  ).join('');
+  picker.innerHTML = `<input type="text" id="icon-search" placeholder="Filter icons…" style="width:100%;padding:8px 10px;margin-bottom:8px;background:var(--bg1);border:1px solid var(--border);border-radius:8px;color:var(--text1);font-size:13px;outline:none">
+    <div id="icon-cats" style="max-height:320px;overflow-y:auto;scrollbar-width:thin">${cats}</div>
+    <button class="btn btn-ghost" style="margin-top:8px;width:100%;font-size:12px" onmousedown="event.preventDefault();selectIcon('${pageId}','')">Remove icon</button>`;
+  picker.querySelector('#icon-search').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    const cont = picker.querySelector('#icon-cats');
+    if(!q){ cont.innerHTML = cats; return; }
+    const matched = ICONS.filter((ic,i) => {
+      const catName = Object.keys(ICON_CATEGORIES)[Object.values(ICON_CATEGORIES).findIndex(arr => arr.includes(ic))];
+      return catName?.toLowerCase().includes(q);
+    });
+    cont.innerHTML = `<div class="icon-grid">${matched.map(i => `<div class="icon-option" onmousedown="event.preventDefault();selectIcon('${pageId}','${i}')">${i}</div>`).join('')}</div>`;
+  });
+  picker.querySelector('#icon-search').focus();
   picker.classList.add('open');
   setTimeout(() => document.addEventListener('click', closeIconPicker), 10);
 }
