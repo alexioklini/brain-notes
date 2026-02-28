@@ -705,7 +705,7 @@ def get_api_config():
 
 # Chat configuration
 CHAT_CONFIG = {
-    'model': 'anthropic-cloud/claude-opus-4-6-20260205',
+    'model': 'minimax-portal/MiniMax-M2.1',
     'max_tokens': 4096,
 }
 
