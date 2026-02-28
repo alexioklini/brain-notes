@@ -336,6 +336,11 @@ a{color:var(--cyan);text-decoration:none}
 .pe-select-opt:hover{border-color:var(--border-hover)}
 .pe-select-opt.selected{border-color:var(--cyan)}
 
+/* ═══ Multi-Block Selection ═══ */
+.block-wrapper.selected{background:rgba(0,212,255,.08);border-radius:4px;outline:2px solid rgba(0,212,255,.2)}
+.block-wrapper.selected .block-content{caret-color:transparent}
+.block-wrapper.drag-selecting{background:rgba(0,212,255,.05)}
+
 /* ═══ AI Inline Toolbar ═══ */
 #ai-toolbar{display:none;position:absolute;z-index:180;background:var(--bg3);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);padding:4px;animation:menuIn 100ms ease-out}
 #ai-toolbar.open{display:flex;flex-direction:column;gap:0}
@@ -2055,6 +2060,194 @@ function dbMenu(e, dbId){
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MULTI-BLOCK SELECTION
+// ═══════════════════════════════════════════════════════════════
+
+let selectedBlockIds = [];
+let selectionAnchor = null; // block id where shift-selection started
+let isDragSelecting = false;
+let dragSelectStart = null;
+
+function getBlockWrappers(){
+  return Array.from(document.querySelectorAll('.block-wrapper'));
+}
+
+function getBlockIdFromWrapper(wrapper){
+  const el = wrapper.querySelector('[data-block-id]');
+  return el ? el.dataset.blockId : null;
+}
+
+function clearBlockSelection(){
+  selectedBlockIds = [];
+  selectionAnchor = null;
+  document.querySelectorAll('.block-wrapper.selected').forEach(el => el.classList.remove('selected'));
+}
+
+function setBlockSelection(ids){
+  document.querySelectorAll('.block-wrapper.selected').forEach(el => el.classList.remove('selected'));
+  selectedBlockIds = ids;
+  ids.forEach(id => {
+    const el = document.querySelector(`[data-block-id="${id}"]`);
+    if(el){
+      const wrapper = el.closest('.block-wrapper');
+      if(wrapper) wrapper.classList.add('selected');
+    }
+  });
+}
+
+function getBlockRange(id1, id2){
+  const wrappers = getBlockWrappers();
+  let i1 = -1, i2 = -1;
+  wrappers.forEach((w, i) => {
+    const bid = getBlockIdFromWrapper(w);
+    if(bid === id1) i1 = i;
+    if(bid === id2) i2 = i;
+  });
+  if(i1 === -1 || i2 === -1) return [];
+  const start = Math.min(i1, i2), end = Math.max(i1, i2);
+  return wrappers.slice(start, end + 1).map(w => getBlockIdFromWrapper(w)).filter(Boolean);
+}
+
+function getSelectedContent(){
+  if(selectedBlockIds.length === 0) return '';
+  return selectedBlockIds.map(id => {
+    const b = currentBlocks.find(bl => bl.id === id);
+    if(!b) return '';
+    // Strip HTML for AI context
+    const tmp = document.createElement('div');
+    tmp.innerHTML = b.content || '';
+    return tmp.textContent || tmp.innerText || '';
+  }).join('\n');
+}
+
+// Click handler for block selection
+document.addEventListener('mousedown', e => {
+  const wrapper = e.target.closest('.block-wrapper');
+  const pageArea = e.target.closest('#page-area');
+  
+  // Ignore clicks on AI toolbar, slash menu, context menu, etc.
+  if(e.target.closest('#ai-toolbar, #slash-menu, #format-bar, #context-menu, .chat-panel')) return;
+  
+  if(!wrapper || !pageArea){
+    if(!e.target.closest('#ai-toolbar')) clearBlockSelection();
+    return;
+  }
+  
+  const bid = getBlockIdFromWrapper(wrapper);
+  if(!bid) return;
+  
+  if(e.shiftKey && selectionAnchor){
+    // Shift+click: range selection
+    e.preventDefault();
+    const range = getBlockRange(selectionAnchor, bid);
+    setBlockSelection(range);
+    window.getSelection().removeAllRanges();
+    return;
+  }
+  
+  // Start potential drag selection
+  if(!e.shiftKey){
+    // Single click — only set anchor, don't select yet (let normal editing work)
+    selectionAnchor = bid;
+    
+    // Track for drag-to-select
+    isDragSelecting = false;
+    dragSelectStart = bid;
+    
+    const onMove = (me) => {
+      const el = document.elementFromPoint(me.clientX, me.clientY);
+      if(!el) return;
+      const w = el.closest('.block-wrapper');
+      if(!w) return;
+      const hoverId = getBlockIdFromWrapper(w);
+      if(!hoverId || hoverId === dragSelectStart) {
+        if(!isDragSelecting) return; // haven't started multi-select yet
+      }
+      
+      // Only start multi-select if mouse has moved to a different block
+      if(hoverId !== dragSelectStart){
+        isDragSelecting = true;
+        window.getSelection().removeAllRanges();
+      }
+      
+      if(isDragSelecting){
+        const range = getBlockRange(dragSelectStart, hoverId);
+        setBlockSelection(range);
+      }
+    };
+    
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      
+      if(isDragSelecting && selectedBlockIds.length > 0){
+        // Show AI toolbar for multi-block selection
+        showAiToolbarForSelection();
+      }
+      isDragSelecting = false;
+      dragSelectStart = null;
+    };
+    
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+});
+
+// Keyboard: Shift+Up/Down to extend selection, Escape to clear
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && selectedBlockIds.length > 0){
+    clearBlockSelection();
+    hideAiToolbar();
+    return;
+  }
+  
+  if(e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && document.activeElement?.closest('.block-wrapper')){
+    const active = document.activeElement.closest('.block-wrapper');
+    const activeBid = getBlockIdFromWrapper(active);
+    
+    if(selectedBlockIds.length === 0){
+      // Start selection from current block
+      selectionAnchor = activeBid;
+      selectedBlockIds = [activeBid];
+    }
+    
+    // Find last selected block and extend
+    const wrappers = getBlockWrappers();
+    const lastId = selectedBlockIds[selectedBlockIds.length - 1];
+    const lastIdx = wrappers.findIndex(w => getBlockIdFromWrapper(w) === lastId);
+    const nextIdx = e.key === 'ArrowDown' ? lastIdx + 1 : lastIdx - 1;
+    
+    if(nextIdx >= 0 && nextIdx < wrappers.length){
+      e.preventDefault();
+      const nextBid = getBlockIdFromWrapper(wrappers[nextIdx]);
+      const range = getBlockRange(selectionAnchor, nextBid);
+      setBlockSelection(range);
+      window.getSelection().removeAllRanges();
+      showAiToolbarForSelection();
+    }
+  }
+});
+
+// Show AI toolbar positioned at multi-block selection
+function showAiToolbarForSelection(){
+  if(selectedBlockIds.length < 2) return;
+  
+  aiSelectedText = getSelectedContent();
+  aiSelectedBlock = selectedBlockIds[0];
+  
+  const first = document.querySelector(`[data-block-id="${selectedBlockIds[0]}"]`);
+  const last = document.querySelector(`[data-block-id="${selectedBlockIds[selectedBlockIds.length-1]}"]`);
+  if(!first || !last) return;
+  
+  const rect = last.getBoundingClientRect();
+  const toolbar = document.getElementById('ai-toolbar');
+  toolbar.style.left = Math.max(10, rect.left) + 'px';
+  toolbar.style.top = (rect.bottom + 8) + 'px';
+  toolbar.classList.add('open');
+  lucide.createIcons();
+}
+
+// ═══════════════════════════════════════════════════════════════
 // AI INLINE & BLOCK FEATURES
 // ═══════════════════════════════════════════════════════════════
 
@@ -2064,6 +2257,9 @@ let translateMode = 'inline'; // 'inline' or 'page'
 
 // Show AI toolbar on text selection (alongside format bar)
 function showAiToolbar(){
+  // Don't override multi-block selection toolbar
+  if(selectedBlockIds.length > 1) return;
+  
   const sel = window.getSelection();
   if(!sel || sel.isCollapsed || !sel.toString().trim()) { hideAiToolbar(); return; }
   
@@ -2113,7 +2309,7 @@ async function aiInline(action, language){
     // For actions that generate new content (explain, summarize, action_items, key_points), add as new block
     if(['explain','summarize','action_items','key_points','continue'].includes(action)){
       if(aiSelectedBlock){
-        const afterId = aiSelectedBlock;
+        const afterId = selectedBlockIds.length > 1 ? selectedBlockIds[selectedBlockIds.length - 1] : aiSelectedBlock;
         // Parse result into blocks
         const lines = data.result.split('\n').filter(l => l.trim());
         for(let i = 0; i < lines.length; i++){
@@ -2150,6 +2346,7 @@ async function aiInline(action, language){
   }
   
   hideAiToolbar();
+  clearBlockSelection();
   restoreAiToolbar();
 }
 
@@ -2296,12 +2493,13 @@ async function aiBlockCommand(action){
     return;
   }
   
-  // Standard AI block actions
+  // Standard AI block actions — use selected blocks as context if available
   const cleanAction = action.replace('ai_','');
+  const selContent = selectedBlockIds.length > 1 ? getSelectedContent() : '';
   const res = await fetch('/api/ai/block', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({action: cleanAction, page_id: currentPage.id})
+    body: JSON.stringify({action: cleanAction, page_id: currentPage.id, selected_text: selContent})
   });
   const data = await res.json();
   if(data.result) insertAiResult(data.result);

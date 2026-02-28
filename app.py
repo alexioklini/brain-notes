@@ -739,10 +739,13 @@ def ai_block():
     block_id = data.get('block_id', '')
     prompt = data.get('prompt', '')
     language = data.get('language', 'English')
+    selected_text = data.get('selected_text', '').strip()
     
-    # Get page context
+    # Use selected text if provided, otherwise get full page context
     page_context = ''
-    if page_id:
+    if selected_text:
+        page_context = selected_text
+    elif page_id:
         with get_db() as conn:
             page = conn.execute("SELECT title FROM pages WHERE id=?", (page_id,)).fetchone()
             blocks = conn.execute(
