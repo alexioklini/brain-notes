@@ -361,6 +361,26 @@ a{color:var(--cyan);text-decoration:none}
 .translate-dialog select{width:100%;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:16px;font-family:inherit;outline:none}
 .translate-dialog .btns{display:flex;gap:8px;justify-content:flex-end}
 
+/* ═══ Research Modal ═══ */
+#research-modal{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);align-items:center;justify-content:center}
+#research-modal.open{display:flex}
+.research-dialog{background:var(--bg2);border:1px solid var(--border);border-radius:16px;width:520px;box-shadow:0 24px 64px rgba(0,0,0,.5);overflow:hidden}
+.research-header{padding:24px 24px 0;display:flex;align-items:center;gap:10px}
+.research-header h2{margin:0;font-size:20px;font-weight:600}
+.research-header .model-badge{font-size:11px;background:rgba(0,212,255,.1);color:var(--cyan);padding:3px 8px;border-radius:6px;font-weight:500}
+.research-body{padding:20px 24px}
+.research-textarea{width:100%;min-height:120px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:inherit;padding:14px;resize:vertical;outline:none;line-height:1.6;transition:border-color 150ms}
+.research-textarea:focus{border-color:var(--cyan)}
+.research-textarea::placeholder{color:var(--text4)}
+.research-hint{font-size:12px;color:var(--text4);margin-top:8px}
+.research-actions{display:flex;gap:8px;padding:16px 24px;border-top:1px solid var(--border);justify-content:space-between;align-items:center}
+.research-actions .left{display:flex;gap:6px}
+.research-ai-btn{background:none;border:1px solid var(--border);color:var(--text2);padding:6px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-family:inherit;display:flex;align-items:center;gap:4px;transition:all 100ms}
+.research-ai-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.research-submit{background:var(--cyan);color:#0d0d0d;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-family:inherit;font-weight:600;transition:opacity 100ms}
+.research-submit:hover{opacity:.9}
+.research-submit:disabled{opacity:.5;cursor:not-allowed}
+
 /* ═══ Chat Panel ═══ */
 #chat-panel{position:fixed;right:-420px;top:0;bottom:0;width:420px;z-index:250;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;transition:right 200ms ease;box-shadow:-8px 0 32px rgba(0,0,0,.4)}
 #chat-panel.open{right:0}
@@ -544,6 +564,33 @@ a{color:var(--cyan);text-decoration:none}
     <div class="btns">
       <button class="btn btn-ghost" onclick="closeTranslateModal()">Cancel</button>
       <button class="btn" style="background:var(--cyan);color:#0d0d0d" onclick="executeTranslate()">Translate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Research Modal -->
+<div id="research-modal">
+  <div class="research-dialog">
+    <div class="research-header">
+      <i data-lucide="search" style="width:22px;height:22px;color:var(--cyan)"></i>
+      <h2>AI Research</h2>
+      <span class="model-badge" id="research-model-badge">MiniMax M2.5</span>
+    </div>
+    <div class="research-body">
+      <textarea class="research-textarea" id="research-input" placeholder="Describe what you want to research...&#10;&#10;e.g. 'Compare React vs Vue.js for enterprise applications'&#10;e.g. 'Latest developments in prostate cancer treatment 2025-2026'" rows="5"></textarea>
+      <div class="research-hint">💡 Use AI buttons below to refine your prompt before researching</div>
+    </div>
+    <div class="research-actions">
+      <div class="left">
+        <button class="research-ai-btn" onclick="researchAiRefine('improve')"><i data-lucide="sparkles" style="width:12px;height:12px"></i> Improve</button>
+        <button class="research-ai-btn" onclick="researchAiRefine('expand')"><i data-lucide="plus" style="width:12px;height:12px"></i> Expand</button>
+        <button class="research-ai-btn" onclick="researchAiRefine('focus')"><i data-lucide="target" style="width:12px;height:12px"></i> Focus</button>
+        <button class="research-ai-btn" onclick="researchAiRefine('translate')"><i data-lucide="languages" style="width:12px;height:12px"></i> EN</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeResearchModal()">Cancel</button>
+        <button class="research-submit" id="research-submit-btn" onclick="submitResearch()"><i data-lucide="search" style="width:14px;height:14px;vertical-align:middle"></i> Research</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2424,7 +2471,9 @@ async function aiInline(action, language){
   
   const toolbar = document.getElementById('ai-toolbar');
   const inlineController = new AbortController();
-  toolbar.innerHTML = '<div class="ai-loading"><div class="typing-dots"><span></span><span></span><span></span></div> AI working...<button onclick="this.aiCtrl.abort()" style="margin-left:10px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--text2);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit">Cancel</button></div>';
+  const modelSel = document.getElementById('chat-model');
+  const mName = modelSel?.options[modelSel.selectedIndex]?.text || 'AI';
+  toolbar.innerHTML = `<div class="ai-loading"><div class="typing-dots"><span></span><span></span><span></span></div> <strong style="color:var(--cyan)">${mName}</strong> working...<button onclick="this.aiCtrl.abort()" style="margin-left:10px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--text2);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit">Cancel</button></div>`;
   toolbar.querySelector('button').aiCtrl = inlineController;
   
   try {
@@ -2587,50 +2636,7 @@ async function aiBlockCommand(action){
   }
   
   if(action === 'ai_research'){
-    const topic = window.prompt('Research topic:');
-    if(!topic) return;
-    // Show loading indicator
-    const area = document.getElementById('page-area');
-    const loadDiv = document.createElement('div');
-    loadDiv.className = 'ai-loading';
-    loadDiv.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div> AI researching "'+topic+'"...';
-    loadDiv.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);padding:12px 20px;border-radius:10px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;align-items:center;gap:10px';
-    document.body.appendChild(loadDiv);
-    const phases = ['Gathering sources...','Analyzing content...','Writing report...','Finalizing...'];
-    let pi = 0;
-    const controller = new AbortController();
-    const progressTimer = setInterval(() => {
-      pi = Math.min(pi + 1, phases.length - 1);
-      const span = loadDiv.querySelector('.research-phase');
-      if(span) span.textContent = phases[pi];
-    }, 20000);
-    loadDiv.innerHTML = '<div class="typing-dots" style="display:inline-flex;margin-right:8px"><span></span><span></span><span></span></div> <span class="research-phase">'+phases[0]+'</span><button onclick="this.aiController.abort()" style="margin-left:12px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--text2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">Cancel</button>';
-    loadDiv.querySelector('button').aiController = controller;
-    
-    try {
-      const timer = setTimeout(() => controller.abort(), 290000);
-      const res = await fetch('/api/ai/research', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({topic}),
-        signal: controller.signal
-      });
-      clearTimeout(timer);
-      clearInterval(progressTimer);
-      const data = await res.json();
-      loadDiv.remove();
-      if(data.error){
-        alert('Research error: ' + data.error);
-      } else if(data.page_id){
-        await refreshPages();
-        loadPage(data.page_id);
-      }
-    } catch(e){
-      clearInterval(progressTimer);
-      loadDiv.remove();
-      if(e.name === 'AbortError') {} // silent cancel
-      else alert('Research failed: ' + e.message);
-    }
+    openResearchModal();
     return;
   }
   
@@ -2696,6 +2702,132 @@ function mdToHtml(text){
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 }
+
+// ── Research Modal ──
+
+function openResearchModal(){
+  const modal = document.getElementById('research-modal');
+  modal.classList.add('open');
+  const input = document.getElementById('research-input');
+  input.value = '';
+  input.focus();
+  // Update model badge
+  const modelSelect = document.getElementById('chat-model');
+  const modelName = modelSelect?.options[modelSelect.selectedIndex]?.text || 'MiniMax M2.5';
+  document.getElementById('research-model-badge').textContent = modelName;
+  lucide.createIcons();
+}
+
+function closeResearchModal(){
+  document.getElementById('research-modal').classList.remove('open');
+}
+
+async function researchAiRefine(action){
+  const input = document.getElementById('research-input');
+  const text = input.value.trim();
+  if(!text) return;
+  
+  const btns = document.querySelectorAll('.research-ai-btn');
+  btns.forEach(b => b.disabled = true);
+  input.style.opacity = '0.5';
+  
+  const prompts = {
+    'improve': `Improve this research prompt to be clearer and more specific. Return ONLY the improved prompt:\n\n${text}`,
+    'expand': `Expand this research prompt with more specific sub-questions and areas to investigate. Return ONLY the expanded prompt:\n\n${text}`,
+    'focus': `Make this research prompt more focused and specific. Narrow it down to the most important aspects. Return ONLY the focused prompt:\n\n${text}`,
+    'translate': `Translate this research prompt to English. Return ONLY the translation:\n\n${text}`,
+  };
+  
+  try {
+    const res = await fetch('/api/ai/inline', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text, action: 'custom', prompt: prompts[action]})
+    });
+    const data = await res.json();
+    if(data.result) input.value = data.result;
+  } catch(e){}
+  
+  btns.forEach(b => b.disabled = false);
+  input.style.opacity = '1';
+  input.focus();
+}
+
+let researchController = null;
+
+async function submitResearch(){
+  const input = document.getElementById('research-input');
+  const topic = input.value.trim();
+  if(!topic) return;
+  
+  closeResearchModal();
+  
+  // Show progress
+  const modelSelect = document.getElementById('chat-model');
+  const modelName = modelSelect?.options[modelSelect.selectedIndex]?.text || 'MiniMax M2.5';
+  
+  const loadDiv = document.createElement('div');
+  loadDiv.id = 'research-progress';
+  loadDiv.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);padding:14px 24px;border-radius:12px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4);display:flex;align-items:center;gap:12px;font-size:13px';
+  document.body.appendChild(loadDiv);
+  
+  const phases = ['Gathering sources...','Analyzing content...','Writing report...','Finalizing...'];
+  let pi = 0;
+  researchController = new AbortController();
+  
+  loadDiv.innerHTML = `
+    <div class="typing-dots" style="display:inline-flex"><span></span><span></span><span></span></div>
+    <span><strong style="color:var(--cyan)">${modelName}</strong> · <span class="research-phase">${phases[0]}</span></span>
+    <button onclick="cancelResearch()" style="margin-left:8px;background:none;border:1px solid rgba(255,255,255,.15);color:var(--text3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;transition:all 100ms">Cancel</button>`;
+  
+  const progressTimer = setInterval(() => {
+    pi = Math.min(pi + 1, phases.length - 1);
+    const span = loadDiv.querySelector('.research-phase');
+    if(span) span.textContent = phases[pi];
+  }, 20000);
+  
+  try {
+    const timer = setTimeout(() => researchController.abort(), 290000);
+    const res = await fetch('/api/ai/research', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({topic}),
+      signal: researchController.signal
+    });
+    clearTimeout(timer);
+    clearInterval(progressTimer);
+    const data = await res.json();
+    loadDiv.remove();
+    if(data.error){
+      alert('Research error: ' + data.error);
+    } else if(data.page_id){
+      await refreshPages();
+      loadPage(data.page_id);
+    }
+  } catch(e){
+    clearInterval(progressTimer);
+    loadDiv.remove();
+    if(e.name !== 'AbortError') alert('Research failed: ' + e.message);
+  }
+  researchController = null;
+}
+
+function cancelResearch(){
+  if(researchController) researchController.abort();
+  const el = document.getElementById('research-progress');
+  if(el) el.remove();
+}
+
+// Close research modal on Escape
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && document.getElementById('research-modal').classList.contains('open')){
+    closeResearchModal();
+  }
+  // Ctrl/Cmd+Enter to submit research
+  if((e.metaKey || e.ctrlKey) && e.key === 'Enter' && document.getElementById('research-modal').classList.contains('open')){
+    submitResearch();
+  }
+});
 
 // Hook AI toolbar into selection change
 let aiToolbarTimeout;

@@ -844,6 +844,23 @@ Be factual, thorough, and cite specific information where possible."""
         return jsonify({'error': str(e)}), 500
 
 
+def md_inline(text):
+    """Convert inline markdown to HTML."""
+    if not text:
+        return text
+    import re as _re
+    t = text
+    t = _re.sub(r'\*\*\*(.+?)\*\*\*', r'<strong><em>\1</em></strong>', t)
+    t = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
+    t = _re.sub(r'__(.+?)__', r'<strong>\1</strong>', t)
+    t = _re.sub(r'\*(.+?)\*', r'<em>\1</em>', t)
+    t = _re.sub(r'_(.+?)_', r'<em>\1</em>', t)
+    t = _re.sub(r'~~(.+?)~~', r'<s>\1</s>', t)
+    t = _re.sub(r'`([^`]+)`', r'<code>\1</code>', t)
+    t = _re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', t)
+    return t
+
+
 def parse_markdown_to_blocks(text):
     """Convert markdown text to block array."""
     blocks = []
@@ -863,34 +880,51 @@ def parse_markdown_to_blocks(text):
             i += 1
             continue
         
+        # Markdown tables
+        if '|' in line and line.strip().startswith('|'):
+            table_lines = []
+            while i < len(lines) and '|' in lines[i] and lines[i].strip().startswith('|'):
+                stripped = lines[i].strip()
+                # Skip separator rows (|---|---|)
+                if not re.match(r'^\|[\s\-:]+\|$', stripped.replace('|', '|')):
+                    if not all(c in '-| :' for c in stripped):
+                        cells = [c.strip() for c in stripped.strip('|').split('|')]
+                        table_lines.append(cells)
+                i += 1
+            if table_lines:
+                # Apply inline markdown to cells
+                table_lines = [[md_inline(c) for c in row] for row in table_lines]
+                blocks.append({'type': 'table', 'content': json.dumps(table_lines)})
+            continue
+        
         # Headers
         if line.startswith('### '):
-            blocks.append({'type': 'h3', 'content': line[4:].strip()})
+            blocks.append({'type': 'h3', 'content': md_inline(line[4:].strip())})
         elif line.startswith('## '):
-            blocks.append({'type': 'h2', 'content': line[3:].strip()})
+            blocks.append({'type': 'h2', 'content': md_inline(line[3:].strip())})
         elif line.startswith('# '):
-            blocks.append({'type': 'h1', 'content': line[2:].strip()})
+            blocks.append({'type': 'h1', 'content': md_inline(line[2:].strip())})
         # Bullets
         elif line.strip().startswith('- ') or line.strip().startswith('* '):
             content = line.strip()[2:]
-            blocks.append({'type': 'bullet', 'content': content})
+            blocks.append({'type': 'bullet', 'content': md_inline(content)})
         # Numbered
         elif re.match(r'^\d+\.\s', line.strip()):
             content = re.sub(r'^\d+\.\s', '', line.strip())
-            blocks.append({'type': 'numbered', 'content': content})
+            blocks.append({'type': 'numbered', 'content': md_inline(content)})
         # Blockquote
         elif line.strip().startswith('> '):
-            blocks.append({'type': 'quote', 'content': line.strip()[2:]})
+            blocks.append({'type': 'quote', 'content': md_inline(line.strip()[2:])})
         # Divider
         elif line.strip() in ('---', '***', '___'):
             blocks.append({'type': 'divider', 'content': ''})
         # Regular text (skip empty lines)
         elif line.strip():
-            blocks.append({'type': 'text', 'content': line.strip()})
+            blocks.append({'type': 'text', 'content': md_inline(line.strip())})
         
         i += 1
     
-    return blocks if blocks else [{'type': 'text', 'content': text}]
+    return blocks if blocks else [{'type': 'text', 'content': md_inline(text)}]
 
 
 @app.route('/api/ai/translate-page', methods=['POST'])
