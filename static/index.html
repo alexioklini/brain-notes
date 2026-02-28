@@ -2729,7 +2729,18 @@ async function researchAiRefine(action){
   
   const btns = document.querySelectorAll('.research-ai-btn');
   btns.forEach(b => b.disabled = true);
-  input.style.opacity = '0.5';
+  const submitBtn = document.getElementById('research-submit-btn');
+  submitBtn.disabled = true;
+  
+  // Show progress overlay on textarea
+  input.style.opacity = '0.3';
+  const body = input.parentElement;
+  const prog = document.createElement('div');
+  prog.className = 'research-refine-progress';
+  prog.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:8px;color:var(--cyan);font-size:13px;pointer-events:none';
+  prog.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div> Refining...';
+  body.style.position = 'relative';
+  body.appendChild(prog);
   
   const prompts = {
     'improve': `Improve this research prompt to be clearer and more specific. Return ONLY the improved prompt:\n\n${text}`,
@@ -2748,7 +2759,9 @@ async function researchAiRefine(action){
     if(data.result) input.value = data.result;
   } catch(e){}
   
+  prog.remove();
   btns.forEach(b => b.disabled = false);
+  submitBtn.disabled = false;
   input.style.opacity = '1';
   input.focus();
 }
