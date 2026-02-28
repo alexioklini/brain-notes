@@ -151,7 +151,7 @@ a{color:var(--cyan);text-decoration:none}
 .block.dragging{opacity:.3}
 
 /* ═══ Slash Menu ═══ */
-#slash-menu{position:absolute;z-index:100;background:var(--bg3);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);width:280px;max-height:320px;overflow-y:auto;display:none;animation:menuIn 100ms ease-out}
+#slash-menu{position:absolute;z-index:100;background:var(--bg3);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);width:280px;max-height:320px;overflow-y:auto;display:none;animation:menuIn 100ms ease-out;scrollbar-width:thin}
 @keyframes menuIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 #slash-menu.open{display:block}
 .slash-section{padding:6px 0}
@@ -744,7 +744,7 @@ function renderSlashMenu(filter){
     html += `<div class="slash-section"><div class="slash-section-title">${section.section}</div>`;
     items.forEach(item => {
       html += `<div class="slash-item${idx===slashIdx?' focused':''}" data-idx="${idx}" data-type="${item.type}" 
-        onmousedown="event.preventDefault();selectSlashItem('${item.type}')" onmouseenter="slashIdx=${idx};renderSlashMenu('${fl}')">
+        onmousedown="event.preventDefault();selectSlashItem('${item.type}')" onmouseenter="slashIdx=${idx};document.querySelectorAll('.slash-item').forEach((el,i)=>el.classList.toggle('focused',i===${idx}))">
         <div class="si-icon">${item.icon}</div>
         <div class="si-info"><div class="si-name">${item.name}</div><div class="si-desc">${item.desc}</div></div>
       </div>`;
@@ -1016,6 +1016,10 @@ function setupKeys(){
   });
   document.addEventListener('click', e => {
     if(!e.target.closest('#slash-menu') && !e.target.closest('[data-block-id]')) hideSlashMenu();
+  });
+  // Prevent slash menu scroll/click from stealing focus
+  document.getElementById('slash-menu').addEventListener('mousedown', e => {
+    if(!e.target.closest('.slash-item')) e.preventDefault();
   });
 }
 
