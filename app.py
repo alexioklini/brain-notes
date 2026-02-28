@@ -823,22 +823,48 @@ Be factual, thorough, and cite specific information where possible."""
         # Parse markdown into blocks
         blocks = parse_markdown_to_blocks(response_text.strip())
         
-        # Create page with blocks
+        # Generate a short title
+        try:
+            title_result = call_claude(api_config,
+                'Generate a very short title (3-6 words max) for this research topic. Return ONLY the title, no quotes, no prefix.',
+                [{"role": "user", "content": topic}])
+            short_title = ''
+            for block in title_result.get('content', []):
+                if block.get('type') == 'text':
+                    short_title += block['text']
+            short_title = short_title.strip().strip('"').strip("'")[:80]
+        except Exception:
+            short_title = topic[:60]
+        
+        # Create page: short title, then prompt as subtitle, then research content
         page_id = gen_id()
         with get_db() as conn:
             conn.execute(
                 "INSERT INTO pages (id, title, icon, workspace, sort_order) VALUES (?,?,?,'docs',0)",
-                (page_id, f"Research: {topic}", 'search')
+                (page_id, short_title, 'search')
             )
+            # Insert prompt as first block (light text)
+            prompt_bid = gen_id()
+            conn.execute(
+                "INSERT INTO blocks (id, page_id, type, content, sort_order) VALUES (?,?,?,?,?)",
+                (prompt_bid, page_id, 'quote', md_inline(topic), 0)
+            )
+            # Insert divider
+            div_bid = gen_id()
+            conn.execute(
+                "INSERT INTO blocks (id, page_id, type, content, sort_order) VALUES (?,?,?,?,?)",
+                (div_bid, page_id, 'divider', '', 1)
+            )
+            # Insert research blocks
             for i, block in enumerate(blocks):
                 bid = gen_id()
                 conn.execute(
                     "INSERT INTO blocks (id, page_id, type, content, sort_order) VALUES (?,?,?,?,?)",
-                    (bid, page_id, block['type'], block['content'], i)
+                    (bid, page_id, block['type'], block['content'], i + 2)
                 )
             conn.commit()
         
-        return jsonify({'page_id': page_id, 'title': f"Research: {topic}", 'blocks': len(blocks)})
+        return jsonify({'page_id': page_id, 'title': short_title, 'blocks': len(blocks) + 2})
     except Exception as e:
         logger.error(f"AI research error: {e}")
         return jsonify({'error': str(e)}), 500
