@@ -809,7 +809,9 @@ Create the report with:
 
 Format your response as structured content that can be broken into blocks.
 Use markdown headers (##, ###), bullet points, and clear paragraphs.
-Be factual, thorough, and cite specific information where possible."""
+Be factual, thorough, and cite specific information where possible.
+
+IMPORTANT: Start directly with the content. Do NOT include meta-commentary like "I will analyze...", "Let me research...", "Now I have enough data...", "Here is my report...", thinking-out-loud, or preambles. Just the report itself."""
 
         result = call_claude(api_config, 
                            'You are a research assistant. Provide thorough, well-structured research reports. Use your knowledge to be as comprehensive as possible.',
@@ -819,6 +821,20 @@ Be factual, thorough, and cite specific information where possible."""
         for block in result.get('content', []):
             if block.get('type') == 'text':
                 response_text += block['text']
+        
+        # Strip meta-commentary lines from response
+        filtered_lines = []
+        skip_patterns = re.compile(
+            r'^(I will |I\'ll |Let me |Now I |Here is |Here\'s |Below is |I have |'
+            r'Ich werde |Lass mich |Hier ist |Jetzt habe |Nun werde |'
+            r'I\'m going to |Allow me |I am now |Based on my |After analyzing)',
+            re.IGNORECASE
+        )
+        for line in response_text.strip().split('\n'):
+            if line.strip() and skip_patterns.match(line.strip()) and len(line.strip()) < 200:
+                continue
+            filtered_lines.append(line)
+        response_text = '\n'.join(filtered_lines)
         
         # Parse markdown into blocks
         blocks = parse_markdown_to_blocks(response_text.strip())
