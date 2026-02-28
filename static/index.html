@@ -215,6 +215,90 @@ a{color:var(--cyan);text-decoration:none}
 .fmt-btn.active{color:var(--cyan)}
 .fmt-sep{width:1px;background:var(--border);margin:4px 2px}
 
+/* ═══ Workspace Tabs ═══ */
+.ws-tabs{display:flex;gap:0;padding:4px 8px 0;border-bottom:1px solid var(--border);margin-bottom:4px}
+.ws-tab{flex:1;padding:8px 4px;background:none;border:none;color:var(--text3);font-size:11px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all var(--transition);display:flex;align-items:center;justify-content:center;gap:4px;font-family:inherit}
+.ws-tab:hover{color:var(--text)}
+.ws-tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.ws-content{display:none;flex-direction:column;flex:1;overflow:hidden}
+.ws-content.active{display:flex}
+
+/* ═══ Database Views ═══ */
+.db-header{padding:40px 24px 20px;max-width:960px;margin:0 auto;width:100%}
+.db-title{font-size:32px;font-weight:700;outline:none;border:none;background:none;color:var(--text);width:100%;font-family:inherit}
+.db-title:empty::before{content:attr(placeholder);color:var(--text4)}
+.db-desc{font-size:14px;color:var(--text3);margin-top:4px;outline:none}
+.db-desc:empty::before{content:'Add a description...';color:var(--text4)}
+
+/* View Tabs */
+.view-tabs{display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);padding:0 24px;max-width:960px;margin:0 auto;width:100%}
+.view-tab{padding:8px 16px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;font-weight:500;border-bottom:2px solid transparent;transition:all var(--transition);font-family:inherit;display:flex;align-items:center;gap:6px}
+.view-tab:hover{color:var(--text)}
+.view-tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.view-add{padding:6px;color:var(--text4);cursor:pointer;margin-left:4px;display:flex;align-items:center}
+.view-add:hover{color:var(--text)}
+
+/* Table View */
+.db-table-wrap{max-width:960px;margin:0 auto;width:100%;padding:12px 24px;overflow-x:auto}
+.db-table{width:100%;border-collapse:collapse;font-size:13px}
+.db-table th{text-align:left;padding:6px 12px;color:var(--text3);font-weight:500;font-size:12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);user-select:none;white-space:nowrap}
+.db-table td{padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.03);vertical-align:middle}
+.db-table tr:hover td{background:var(--card)}
+.db-table tr{cursor:pointer}
+.db-table .title-cell{font-weight:500;color:var(--text);display:flex;align-items:center;gap:6px}
+.db-table .title-cell input{background:none;border:none;color:var(--text);font-size:13px;font-weight:500;outline:none;width:100%;font-family:inherit}
+.db-table .new-row{color:var(--text4);cursor:pointer}
+.db-table .new-row:hover{color:var(--text3)}
+.db-table .new-row td{border:none}
+
+/* Property Tags */
+.prop-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;line-height:1.4}
+.prop-multi{display:flex;gap:4px;flex-wrap:wrap}
+.prop-date{color:var(--text2);font-size:12px}
+.prop-text{color:var(--text2);font-size:12px}
+.prop-checkbox{accent-color:var(--cyan)}
+.prop-number{color:var(--text2);font-size:12px;font-variant-numeric:tabular-nums}
+
+/* Board View (Kanban) */
+.db-board{display:flex;gap:12px;padding:12px 24px;max-width:960px;margin:0 auto;width:100%;overflow-x:auto;flex:1}
+.board-col{min-width:260px;width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:8px}
+.board-col-header{display:flex;align-items:center;gap:8px;padding:8px 4px;font-size:13px;font-weight:600}
+.board-col-header .col-tag{padding:2px 8px;border-radius:4px;font-size:12px}
+.board-col-header .col-count{color:var(--text4);font-size:12px;font-weight:400}
+.board-cards{display:flex;flex-direction:column;gap:6px;flex:1;min-height:40px;padding:4px;border-radius:8px;transition:background var(--transition)}
+.board-cards.drag-over{background:rgba(0,212,255,.05)}
+.board-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;transition:all var(--transition)}
+.board-card:hover{border-color:var(--border-hover);background:var(--card-hover)}
+.board-card .card-title{font-size:13px;font-weight:500;margin-bottom:6px}
+.board-card .card-props{display:flex;flex-wrap:wrap;gap:4px;font-size:11px}
+.board-add{padding:6px 8px;color:var(--text4);cursor:pointer;font-size:13px;border-radius:6px;transition:all var(--transition);display:flex;align-items:center;gap:4px}
+.board-add:hover{background:var(--card);color:var(--text3)}
+
+/* List View */
+.db-list{max-width:960px;margin:0 auto;width:100%;padding:12px 24px}
+.list-item{display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:6px;cursor:pointer;transition:background var(--transition)}
+.list-item:hover{background:var(--card)}
+.list-item .li-title{flex:1;font-size:14px;font-weight:500}
+.list-item .li-props{display:flex;gap:8px;align-items:center}
+
+/* Property Editor Modal */
+#prop-editor{display:none;position:fixed;right:0;top:0;bottom:0;width:380px;z-index:200;background:var(--bg2);border-left:1px solid var(--border);box-shadow:-8px 0 32px rgba(0,0,0,.4);overflow-y:auto;animation:slideIn 150ms ease-out}
+@keyframes slideIn{from{transform:translateX(100%)}to{transform:none}}
+#prop-editor.open{display:block}
+.pe-header{display:flex;align-items:center;padding:16px;border-bottom:1px solid var(--border);gap:8px}
+.pe-header h3{flex:1;font-size:15px;font-weight:600}
+.pe-close{background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;border-radius:4px}
+.pe-close:hover{color:var(--text);background:var(--card-hover)}
+.pe-body{padding:16px}
+.pe-field{margin-bottom:16px}
+.pe-field label{display:block;font-size:12px;color:var(--text3);margin-bottom:4px;font-weight:500}
+.pe-field input,.pe-field select,.pe-field textarea{width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none;font-family:inherit}
+.pe-field input:focus,.pe-field select:focus{border-color:var(--cyan)}
+.pe-select-opts{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.pe-select-opt{padding:3px 10px;border-radius:4px;cursor:pointer;font-size:12px;transition:all var(--transition);border:1px solid transparent}
+.pe-select-opt:hover{border-color:var(--border-hover)}
+.pe-select-opt.selected{border-color:var(--cyan)}
+
 @media(max-width:768px){
   :root{--sidebar-w:100vw}
   #sidebar{position:fixed;top:0;left:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform 200ms}
@@ -234,16 +318,43 @@ a{color:var(--cyan);text-decoration:none}
       <i data-lucide="search"></i>
       <input type="text" placeholder="Search..." onkeydown="if(event.key==='Enter')openSearch(this.value)" onfocus="openSearch()">
     </div>
-    <div class="sb-section">
-      <button class="sb-new-page" onclick="createPage()"><i data-lucide="plus" style="width:14px;height:14px"></i> New page</button>
+    <!-- Workspace Tabs -->
+    <div class="ws-tabs">
+      <button class="ws-tab active" data-ws="docs" onclick="switchWorkspace('docs')"><i data-lucide="file-text" style="width:14px;height:14px"></i> Docs</button>
+      <button class="ws-tab" data-ws="projects" onclick="switchWorkspace('projects')"><i data-lucide="layout-grid" style="width:14px;height:14px"></i> Projects</button>
+      <button class="ws-tab" data-ws="wiki" onclick="switchWorkspace('wiki')"><i data-lucide="book-open" style="width:14px;height:14px"></i> Wiki</button>
     </div>
-    <div class="sb-section">
-      <div class="sb-section-title">Favorites</div>
-      <div id="favorites-list"></div>
+    <!-- Docs workspace -->
+    <div id="ws-docs" class="ws-content active">
+      <div class="sb-section">
+        <button class="sb-new-page" onclick="createPage()"><i data-lucide="plus" style="width:14px;height:14px"></i> New page</button>
+      </div>
+      <div class="sb-section">
+        <div class="sb-section-title">Favorites</div>
+        <div id="favorites-list"></div>
+      </div>
+      <div class="sb-section" style="flex:1;overflow-y:auto">
+        <div class="sb-section-title">Pages</div>
+        <div id="page-list" class="page-list"></div>
+      </div>
     </div>
-    <div class="sb-section" style="flex:1;overflow-y:auto">
-      <div class="sb-section-title">Pages</div>
-      <div id="page-list" class="page-list"></div>
+    <!-- Projects workspace -->
+    <div id="ws-projects" class="ws-content">
+      <div class="sb-section">
+        <button class="sb-new-page" onclick="createDatabase('projects')"><i data-lucide="plus" style="width:14px;height:14px"></i> New project</button>
+      </div>
+      <div class="sb-section" style="flex:1;overflow-y:auto">
+        <div id="project-list" class="page-list"></div>
+      </div>
+    </div>
+    <!-- Wiki workspace -->
+    <div id="ws-wiki" class="ws-content">
+      <div class="sb-section">
+        <button class="sb-new-page" onclick="createDatabase('wiki')"><i data-lucide="plus" style="width:14px;height:14px"></i> New knowledge base</button>
+      </div>
+      <div class="sb-section" style="flex:1;overflow-y:auto">
+        <div id="wiki-list" class="page-list"></div>
+      </div>
     </div>
   </aside>
 
@@ -277,6 +388,15 @@ a{color:var(--cyan);text-decoration:none}
 
 <!-- Icon Picker -->
 <div id="icon-picker"></div>
+
+<!-- Property Editor Side Panel -->
+<div id="prop-editor">
+  <div class="pe-header">
+    <h3 id="pe-title">Edit Item</h3>
+    <button class="pe-close" onclick="closePropEditor()"><i data-lucide="x" style="width:16px;height:16px"></i></button>
+  </div>
+  <div class="pe-body" id="pe-body"></div>
+</div>
 
 <!-- Format Bar -->
 <div id="format-bar">
@@ -436,7 +556,8 @@ async function loadPage(id){
   currentBlocks = data.blocks || [];
   renderPage();
   renderSidebar();
-  document.getElementById('welcome').style.display = 'none';
+  const w = document.getElementById('welcome');
+  if(w) w.style.display = 'none';
 }
 
 function renderPage(){
@@ -1087,6 +1208,433 @@ function showDialog(title, msg, okLabel='Delete', okClass='btn-danger'){
 function closeDialog(val){
   document.getElementById('dialog').classList.remove('open');
   if(dialogCb){dialogCb(val);dialogCb=null;}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WORKSPACE & DATABASE SYSTEM
+// ═══════════════════════════════════════════════════════════════
+
+let currentWorkspace = 'docs';
+let databases = [];
+let currentDb = null;
+let currentDbView = null;
+let currentDbItems = [];
+
+function switchWorkspace(ws){
+  currentWorkspace = ws;
+  document.querySelectorAll('.ws-tab').forEach(t => t.classList.toggle('active', t.dataset.ws === ws));
+  document.querySelectorAll('.ws-content').forEach(c => c.classList.toggle('active', c.id === 'ws-'+ws));
+  if(ws === 'docs'){
+    refreshPages();
+  } else {
+    loadDatabases(ws);
+  }
+}
+
+async function loadDatabases(workspace){
+  databases = await api('/databases?workspace='+workspace);
+  const listId = workspace === 'projects' ? 'project-list' : 'wiki-list';
+  const el = document.getElementById(listId);
+  if(!databases.length){
+    el.innerHTML = `<div style="padding:8px;font-size:12px;color:var(--text4)">No ${workspace === 'projects' ? 'projects' : 'knowledge bases'} yet</div>`;
+  } else {
+    el.innerHTML = databases.map(db => `
+      <div class="page-item${currentDb && currentDb.id === db.id ? ' active' : ''}" onclick="loadDatabase('${db.id}')" oncontextmenu="dbMenu(event,'${db.id}')">
+        <span class="p-icon">${renderIcon(db.icon || (workspace==='projects'?'layout-grid':'book-open'), 16)}</span>
+        <span class="p-title">${esc(db.title)}</span>
+      </div>
+    `).join('');
+  }
+  lucide.createIcons();
+}
+
+async function createDatabase(workspace){
+  const title = workspace === 'projects' ? 'New Project' : 'New Knowledge Base';
+  const icon = workspace === 'projects' ? 'layout-grid' : 'book-open';
+  const db = await api('/databases', {method:'POST', body:{title, icon, workspace}});
+  await loadDatabases(workspace);
+  await loadDatabase(db.id);
+}
+
+async function loadDatabase(dbId){
+  const data = await api('/databases/'+dbId);
+  currentDb = data;
+  currentDbItems = data.items || [];
+  currentDbView = data.views?.[0] || null;
+  currentPage = null;
+  renderDatabase();
+  loadDatabases(currentDb.workspace);
+}
+
+function renderDatabase(){
+  if(!currentDb) return;
+  const area = document.getElementById('page-area');
+  const welcome = document.getElementById('welcome');
+  if(welcome) welcome.style.display = 'none';
+  document.getElementById('breadcrumbs').innerHTML = `<span class="current">${renderIcon(currentDb.icon,16)} ${esc(currentDb.title)}</span>`;
+  
+  const schema = currentDb.properties_schema || [];
+  const views = currentDb.views || [];
+  
+  let html = '';
+  
+  // Header
+  html += `<div style="width:100%">`;
+  html += `<div class="db-header">
+    <div class="db-title" contenteditable="true" placeholder="Untitled" oninput="onDbTitleChange(this)">${esc(currentDb.title)}</div>
+    <div class="db-desc" contenteditable="true" oninput="onDbDescChange(this)">${esc(currentDb.description)}</div>
+  </div>`;
+  
+  // View tabs
+  html += `<div class="view-tabs">`;
+  views.forEach(v => {
+    const icon = v.type==='board'?'kanban':v.type==='table'?'table':'list';
+    html += `<button class="view-tab${currentDbView && currentDbView.id===v.id?' active':''}" onclick="switchView('${v.id}')">
+      <i data-lucide="${icon}" style="width:14px;height:14px"></i> ${esc(v.name)}</button>`;
+  });
+  html += `<span class="view-add" onclick="addView()"><i data-lucide="plus" style="width:14px;height:14px"></i></span>`;
+  html += `</div>`;
+  
+  // View content
+  if(currentDbView){
+    if(currentDbView.type === 'table') html += renderTableView(schema);
+    else if(currentDbView.type === 'board') html += renderBoardView(schema);
+    else if(currentDbView.type === 'list') html += renderListView(schema);
+  }
+  
+  html += `</div>`;
+  area.innerHTML = html;
+  lucide.createIcons();
+}
+
+function renderTableView(schema){
+  let html = `<div class="db-table-wrap"><table class="db-table"><thead><tr>`;
+  html += `<th style="min-width:200px">Title</th>`;
+  schema.forEach(p => { html += `<th>${esc(p.name)}</th>`; });
+  html += `</tr></thead><tbody>`;
+  
+  currentDbItems.forEach(item => {
+    html += `<tr onclick="openItemEditor('${item.id}')">`;
+    html += `<td><div class="title-cell">${renderIcon(item.icon,14)} ${esc(item.title)}</div></td>`;
+    schema.forEach(prop => {
+      const val = (item.properties || {})[prop.id];
+      html += `<td>${renderPropValue(prop, val)}</td>`;
+    });
+    html += `</tr>`;
+  });
+  
+  // New row
+  html += `<tr class="new-row" onclick="addDbItem()"><td colspan="${schema.length+1}"><i data-lucide="plus" style="width:12px;height:12px;vertical-align:middle"></i> New</td></tr>`;
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+function renderBoardView(schema){
+  const config = currentDbView?.config || {};
+  const groupBy = config.group_by;
+  const groupProp = schema.find(p => p.id === groupBy);
+  
+  if(!groupProp || groupProp.type !== 'select'){
+    return `<div style="padding:40px;text-align:center;color:var(--text3)">Board view needs a Select property to group by</div>`;
+  }
+  
+  const groups = {};
+  (groupProp.options || []).forEach(opt => { groups[opt.name] = {color: opt.color, items: []}; });
+  groups['No Status'] = {color: '#374151', items: []};
+  
+  currentDbItems.forEach(item => {
+    const val = (item.properties || {})[groupBy];
+    if(val && groups[val]) groups[val].items.push(item);
+    else groups['No Status'].items.push(item);
+  });
+  
+  let html = `<div class="db-board">`;
+  Object.entries(groups).forEach(([name, group]) => {
+    html += `<div class="board-col" data-group="${esc(name)}">
+      <div class="board-col-header">
+        <span class="col-tag" style="background:${group.color};color:#fff">${esc(name)}</span>
+        <span class="col-count">${group.items.length}</span>
+      </div>
+      <div class="board-cards" data-group="${esc(name)}"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="boardDrop(event,'${esc(name)}','${groupBy}')">`;
+    group.items.forEach(item => {
+      html += `<div class="board-card" draggable="true" data-item-id="${item.id}"
+        ondragstart="event.dataTransfer.setData('text/plain','${item.id}')"
+        onclick="openItemEditor('${item.id}')">
+        <div class="card-title">${esc(item.title)}</div>
+        <div class="card-props">`;
+      schema.forEach(p => {
+        if(p.id === groupBy) return;
+        const val = (item.properties || {})[p.id];
+        if(val) html += renderPropValue(p, val);
+      });
+      html += `</div></div>`;
+    });
+    html += `<div class="board-add" onclick="addDbItem({${groupBy}:'${esc(name)}'})">
+      <i data-lucide="plus" style="width:12px;height:12px"></i> New
+    </div></div></div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+function renderListView(schema){
+  let html = `<div class="db-list">`;
+  currentDbItems.forEach(item => {
+    html += `<div class="list-item" onclick="openItemEditor('${item.id}')">
+      <span>${renderIcon(item.icon,16)}</span>
+      <span class="li-title">${esc(item.title)}</span>
+      <div class="li-props">`;
+    schema.forEach(p => {
+      const val = (item.properties || {})[p.id];
+      if(val) html += renderPropValue(p, val);
+    });
+    html += `</div></div>`;
+  });
+  html += `<div class="list-item" onclick="addDbItem()" style="color:var(--text4)">
+    <i data-lucide="plus" style="width:14px;height:14px"></i>
+    <span class="li-title">New item</span>
+  </div>`;
+  html += `</div>`;
+  return html;
+}
+
+function renderPropValue(prop, val){
+  if(!val && val !== 0 && val !== false) return '';
+  if(prop.type === 'select'){
+    const opt = (prop.options||[]).find(o => o.name === val);
+    const color = opt?.color || '#6B7280';
+    return `<span class="prop-tag" style="background:${color}22;color:${color}">${esc(val)}</span>`;
+  }
+  if(prop.type === 'multi_select'){
+    const vals = Array.isArray(val) ? val : [val];
+    return `<span class="prop-multi">${vals.map(v => {
+      const opt = (prop.options||[]).find(o => o.name === v);
+      const color = opt?.color || '#6B7280';
+      return `<span class="prop-tag" style="background:${color}22;color:${color}">${esc(v)}</span>`;
+    }).join('')}</span>`;
+  }
+  if(prop.type === 'date') return `<span class="prop-date">${esc(val)}</span>`;
+  if(prop.type === 'checkbox') return `<input type="checkbox" class="prop-checkbox" ${val?'checked':''} disabled>`;
+  if(prop.type === 'number') return `<span class="prop-number">${val}</span>`;
+  return `<span class="prop-text">${esc(String(val))}</span>`;
+}
+
+// Board drag & drop
+async function boardDrop(e, groupName, propId){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const itemId = e.dataTransfer.getData('text/plain');
+  if(!itemId) return;
+  const item = currentDbItems.find(i => i.id === itemId);
+  if(!item) return;
+  item.properties = item.properties || {};
+  item.properties[propId] = groupName === 'No Status' ? '' : groupName;
+  await api('/databases/'+currentDb.id+'/items/'+itemId, {method:'PUT', body:{properties:{[propId]: item.properties[propId]}}});
+  renderDatabase();
+}
+
+// Add DB item
+async function addDbItem(defaultProps){
+  const props = defaultProps || {};
+  const item = await api('/databases/'+currentDb.id+'/items', {method:'POST', body:{title:'Untitled', properties:props}});
+  currentDbItems.push(item);
+  renderDatabase();
+  // Auto-open editor
+  setTimeout(() => openItemEditor(item.id), 100);
+}
+
+// Item editor
+function openItemEditor(itemId){
+  const item = currentDbItems.find(i => i.id === itemId);
+  if(!item) return;
+  const schema = currentDb.properties_schema || [];
+  const panel = document.getElementById('prop-editor');
+  document.getElementById('pe-title').textContent = item.title;
+  
+  let html = `<div class="pe-field">
+    <label>Title</label>
+    <input type="text" value="${esc(item.title)}" oninput="updateItemTitle('${item.id}',this.value)">
+  </div>`;
+  
+  schema.forEach(prop => {
+    const val = (item.properties || {})[prop.id];
+    html += `<div class="pe-field"><label>${esc(prop.name)}</label>`;
+    
+    if(prop.type === 'text'){
+      html += `<input type="text" value="${esc(val||'')}" oninput="updateItemProp('${item.id}','${prop.id}',this.value)">`;
+    }
+    else if(prop.type === 'number'){
+      html += `<input type="number" value="${val||''}" oninput="updateItemProp('${item.id}','${prop.id}',this.valueAsNumber)">`;
+    }
+    else if(prop.type === 'date'){
+      html += `<input type="date" value="${val||''}" oninput="updateItemProp('${item.id}','${prop.id}',this.value)">`;
+    }
+    else if(prop.type === 'checkbox'){
+      html += `<input type="checkbox" ${val?'checked':''} onchange="updateItemProp('${item.id}','${prop.id}',this.checked)" style="width:auto">`;
+    }
+    else if(prop.type === 'select'){
+      html += `<div class="pe-select-opts">`;
+      (prop.options||[]).forEach(opt => {
+        const sel = val === opt.name ? ' selected' : '';
+        html += `<span class="pe-select-opt${sel}" style="background:${opt.color}22;color:${opt.color}" 
+          onclick="updateItemProp('${item.id}','${prop.id}','${esc(opt.name)}');renderPeSelect(this)">${esc(opt.name)}</span>`;
+      });
+      html += `</div>`;
+    }
+    else if(prop.type === 'multi_select'){
+      const vals = Array.isArray(val) ? val : (val ? [val] : []);
+      html += `<div class="pe-select-opts">`;
+      (prop.options||[]).forEach(opt => {
+        const sel = vals.includes(opt.name) ? ' selected' : '';
+        html += `<span class="pe-select-opt${sel}" style="background:${opt.color}22;color:${opt.color}"
+          onclick="toggleMultiSelect('${item.id}','${prop.id}','${esc(opt.name)}',this)">${esc(opt.name)}</span>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+  });
+  
+  // Open page link
+  if(item.page_id){
+    html += `<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="closePropEditor();switchWorkspace('docs');loadPage('${item.page_id}')">
+        <i data-lucide="file-text" style="width:14px;height:14px;margin-right:4px"></i> Open full page
+      </button>
+    </div>`;
+  }
+  
+  // Delete
+  html += `<div style="margin-top:16px">
+    <button class="btn btn-danger" onclick="deleteDbItem('${item.id}')">Delete item</button>
+  </div>`;
+  
+  document.getElementById('pe-body').innerHTML = html;
+  panel.classList.add('open');
+  lucide.createIcons();
+}
+
+function closePropEditor(){
+  document.getElementById('prop-editor').classList.remove('open');
+}
+
+function renderPeSelect(el){
+  el.closest('.pe-select-opts').querySelectorAll('.pe-select-opt').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+let propTimers = {};
+async function updateItemProp(itemId, propId, value){
+  const item = currentDbItems.find(i => i.id === itemId);
+  if(!item) return;
+  item.properties = item.properties || {};
+  item.properties[propId] = value;
+  clearTimeout(propTimers[itemId+propId]);
+  propTimers[itemId+propId] = setTimeout(async () => {
+    await api('/databases/'+currentDb.id+'/items/'+itemId, {method:'PUT', body:{properties:{[propId]:value}}});
+    renderDatabase();
+  }, 300);
+}
+
+async function updateItemTitle(itemId, title){
+  const item = currentDbItems.find(i => i.id === itemId);
+  if(!item) return;
+  item.title = title;
+  document.getElementById('pe-title').textContent = title;
+  clearTimeout(propTimers['title'+itemId]);
+  propTimers['title'+itemId] = setTimeout(async () => {
+    await api('/databases/'+currentDb.id+'/items/'+itemId, {method:'PUT', body:{title}});
+    renderDatabase();
+  }, 300);
+}
+
+function toggleMultiSelect(itemId, propId, optName, el){
+  const item = currentDbItems.find(i => i.id === itemId);
+  if(!item) return;
+  item.properties = item.properties || {};
+  let vals = Array.isArray(item.properties[propId]) ? [...item.properties[propId]] : [];
+  const idx = vals.indexOf(optName);
+  if(idx >= 0) vals.splice(idx, 1); else vals.push(optName);
+  item.properties[propId] = vals;
+  el.classList.toggle('selected');
+  clearTimeout(propTimers[itemId+propId]);
+  propTimers[itemId+propId] = setTimeout(async () => {
+    await api('/databases/'+currentDb.id+'/items/'+itemId, {method:'PUT', body:{properties:{[propId]:vals}}});
+    renderDatabase();
+  }, 300);
+}
+
+async function deleteDbItem(itemId){
+  if(!confirm('Delete this item?')) return;
+  await api('/databases/'+currentDb.id+'/items/'+itemId, {method:'DELETE'});
+  currentDbItems = currentDbItems.filter(i => i.id !== itemId);
+  closePropEditor();
+  renderDatabase();
+}
+
+async function switchView(viewId){
+  currentDbView = currentDb.views.find(v => v.id === viewId);
+  renderDatabase();
+}
+
+async function addView(){
+  const types = ['table','board','list'];
+  const current = currentDbView?.type || 'table';
+  const next = types[(types.indexOf(current)+1) % types.length];
+  const name = next === 'table' ? 'Table' : next === 'board' ? 'Board' : 'List';
+  const schema = currentDb.properties_schema || [];
+  const groupBy = schema.find(p => p.type === 'select')?.id;
+  const config = next === 'board' && groupBy ? {group_by: groupBy} : {};
+  const view = await api('/databases/'+currentDb.id+'/views', {method:'POST', body:{name, type:next, config}});
+  currentDb.views.push(view);
+  currentDbView = view;
+  renderDatabase();
+}
+
+let dbTitleTimer;
+function onDbTitleChange(el){
+  clearTimeout(dbTitleTimer);
+  dbTitleTimer = setTimeout(async () => {
+    currentDb.title = el.innerText.trim() || 'Untitled';
+    await api('/databases/'+currentDb.id, {method:'PUT', body:{title:currentDb.title}});
+    loadDatabases(currentDb.workspace);
+  }, 500);
+}
+
+let dbDescTimer;
+function onDbDescChange(el){
+  clearTimeout(dbDescTimer);
+  dbDescTimer = setTimeout(async () => {
+    currentDb.description = el.innerText.trim();
+    await api('/databases/'+currentDb.id, {method:'PUT', body:{description:currentDb.description}});
+  }, 500);
+}
+
+function dbMenu(e, dbId){
+  e.preventDefault();
+  e.stopPropagation();
+  const db = databases.find(d => d.id === dbId);
+  if(!db) return;
+  const menu = document.createElement('div');
+  menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:200;background:var(--bg3);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.5);padding:4px;min-width:160px;animation:menuIn 100ms ease-out`;
+  [{label:'Delete', danger:true, action: async () => {
+    if(!confirm('Delete this database and all items?')) return;
+    await api('/databases/'+dbId, {method:'DELETE'});
+    if(currentDb && currentDb.id === dbId) { currentDb = null; document.getElementById('page-area').innerHTML = '<div class="welcome" id="welcome"><i data-lucide="brain"></i><p>Brain Notes</p></div>'; lucide.createIcons(); }
+    loadDatabases(db.workspace);
+  }}].forEach(item => {
+    const el = document.createElement('div');
+    el.style.cssText = `padding:6px 12px;border-radius:4px;cursor:pointer;font-size:13px;color:${item.danger?'var(--red)':'var(--text2)'};transition:background 80ms`;
+    el.textContent = item.label;
+    el.onmouseover = () => el.style.background = 'var(--card-hover)';
+    el.onmouseout = () => el.style.background = 'none';
+    el.onclick = () => { document.body.removeChild(menu); item.action(); };
+    menu.appendChild(el);
+  });
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', function rm(){ document.body.contains(menu) && document.body.removeChild(menu); document.removeEventListener('click',rm); }), 10);
 }
 
 // ── Utils ──
