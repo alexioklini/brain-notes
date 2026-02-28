@@ -337,9 +337,9 @@ a{color:var(--cyan);text-decoration:none}
 .pe-select-opt.selected{border-color:var(--cyan)}
 
 /* ═══ Multi-Block Selection ═══ */
-.block-wrapper.selected{background:rgba(0,212,255,.08);border-radius:4px;outline:2px solid rgba(0,212,255,.2)}
-.block-wrapper.selected .block-content{caret-color:transparent}
-.block-wrapper.drag-selecting{background:rgba(0,212,255,.05)}
+.block[data-id].selected{background:rgba(0,212,255,.08);border-radius:4px;outline:2px solid rgba(0,212,255,.2)}
+.block[data-id].selected .block-content{caret-color:transparent}
+.block[data-id].drag-selecting{background:rgba(0,212,255,.05)}
 
 /* ═══ AI Inline Toolbar ═══ */
 #ai-toolbar{display:none;position:absolute;z-index:180;background:var(--bg3);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);padding:4px;animation:menuIn 100ms ease-out}
@@ -2069,29 +2069,25 @@ let isDragSelecting = false;
 let dragSelectStart = null;
 
 function getBlockWrappers(){
-  return Array.from(document.querySelectorAll('.block-wrapper'));
+  return Array.from(document.querySelectorAll('.block[data-id]'));
 }
 
 function getBlockIdFromWrapper(wrapper){
-  const el = wrapper.querySelector('[data-block-id]');
-  return el ? el.dataset.blockId : null;
+  return wrapper?.dataset?.id || null;
 }
 
 function clearBlockSelection(){
   selectedBlockIds = [];
   selectionAnchor = null;
-  document.querySelectorAll('.block-wrapper.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.block[data-id].selected').forEach(el => el.classList.remove('selected'));
 }
 
 function setBlockSelection(ids){
-  document.querySelectorAll('.block-wrapper.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.block[data-id].selected').forEach(el => el.classList.remove('selected'));
   selectedBlockIds = ids;
   ids.forEach(id => {
-    const el = document.querySelector(`[data-block-id="${id}"]`);
-    if(el){
-      const wrapper = el.closest('.block-wrapper');
-      if(wrapper) wrapper.classList.add('selected');
-    }
+    const el = document.querySelector(`.block[data-id="${id}"]`);
+    if(el) el.classList.add('selected');
   });
 }
 
@@ -2122,7 +2118,7 @@ function getSelectedContent(){
 
 // Click handler for block selection
 document.addEventListener('mousedown', e => {
-  const wrapper = e.target.closest('.block-wrapper');
+  const wrapper = e.target.closest('.block[data-id]');
   const pageArea = e.target.closest('#page-area');
   
   // Ignore clicks on AI toolbar, slash menu, context menu, etc.
@@ -2157,7 +2153,7 @@ document.addEventListener('mousedown', e => {
     const onMove = (me) => {
       const el = document.elementFromPoint(me.clientX, me.clientY);
       if(!el) return;
-      const w = el.closest('.block-wrapper');
+      const w = el.closest('.block[data-id]');
       if(!w) return;
       const hoverId = getBlockIdFromWrapper(w);
       if(!hoverId || hoverId === dragSelectStart) {
@@ -2201,8 +2197,8 @@ document.addEventListener('keydown', e => {
     return;
   }
   
-  if(e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && document.activeElement?.closest('.block-wrapper')){
-    const active = document.activeElement.closest('.block-wrapper');
+  if(e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && document.activeElement?.closest('.block[data-id]')){
+    const active = document.activeElement.closest('.block[data-id]');
     const activeBid = getBlockIdFromWrapper(active);
     
     if(selectedBlockIds.length === 0){
@@ -2235,8 +2231,8 @@ function showAiToolbarForSelection(){
   aiSelectedText = getSelectedContent();
   aiSelectedBlock = selectedBlockIds[0];
   
-  const first = document.querySelector(`[data-block-id="${selectedBlockIds[0]}"]`);
-  const last = document.querySelector(`[data-block-id="${selectedBlockIds[selectedBlockIds.length-1]}"]`);
+  const first = document.querySelector(`.block[data-id="${selectedBlockIds[0]}"]`);
+  const last = document.querySelector(`.block[data-id="${selectedBlockIds[selectedBlockIds.length-1]}"]`);
   if(!first || !last) return;
   
   const rect = last.getBoundingClientRect();
