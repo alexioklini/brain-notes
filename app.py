@@ -791,6 +791,7 @@ def ai_research():
     """AI Research — generate a comprehensive research page on a topic."""
     data = request.get_json(force=True)
     topic = data.get('topic', '').strip()
+    title = data.get('title', '').strip()
     
     if not topic:
         return jsonify({'error': 'No topic provided'}), 400
@@ -839,21 +840,18 @@ IMPORTANT: Start directly with the content. Do NOT include meta-commentary like 
         # Parse markdown into blocks
         blocks = parse_markdown_to_blocks(response_text.strip())
         
-        # Extract short title from first heading in response, or truncate topic
-        short_title = None
-        for block in blocks:
-            if block['type'] in ('h1', 'h2') and block['content']:
-                # Strip HTML tags for title
-                t = re.sub(r'<[^>]+>', '', block['content']).strip()
-                if len(t) <= 80:
-                    short_title = t
-                    blocks = [b for b in blocks if b is not block]  # remove from content
-                break
+        # Use provided title, or extract from first heading, or truncate topic
+        short_title = title
         if not short_title:
-            # Truncate topic to first sentence or 60 chars
+            for block in blocks:
+                if block['type'] in ('h1', 'h2') and block['content']:
+                    t = re.sub(r'<[^>]+>', '', block['content']).strip()
+                    if len(t) <= 80:
+                        short_title = t
+                        blocks = [b for b in blocks if b is not block]
+                    break
+        if not short_title:
             short_title = topic.split('.')[0].split('\n')[0][:60].strip()
-            if len(topic) > 60:
-                short_title += '…'
         
         # Create page: short title, then prompt as subtitle, then research content
         page_id = gen_id()

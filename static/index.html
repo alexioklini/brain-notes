@@ -577,8 +577,9 @@ a{color:var(--cyan);text-decoration:none}
       <span class="model-badge" id="research-model-badge">MiniMax M2.5</span>
     </div>
     <div class="research-body">
-      <textarea class="research-textarea" id="research-input" placeholder="Describe what you want to research...&#10;&#10;e.g. 'Compare React vs Vue.js for enterprise applications'&#10;e.g. 'Latest developments in prostate cancer treatment 2025-2026'" rows="5"></textarea>
-      <div class="research-hint">💡 Use AI buttons below to refine your prompt before researching</div>
+      <input type="text" class="research-title-input" id="research-title" placeholder="Page title (e.g. 'React vs Vue.js')" style="width:100%;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:16px;font-family:inherit;font-weight:600;outline:none;margin-bottom:10px;transition:border-color 150ms" onfocus="this.style.borderColor='var(--cyan)'" onblur="this.style.borderColor='var(--border)'">
+      <textarea class="research-textarea" id="research-input" placeholder="Describe what you want to research...&#10;&#10;e.g. 'Compare React vs Vue.js for enterprise applications — focus on performance, ecosystem, learning curve, and enterprise adoption'&#10;e.g. 'Latest developments in prostate cancer active surveillance 2025-2026'" rows="5"></textarea>
+      <div class="research-hint">💡 AI buttons refine both title and prompt before researching</div>
     </div>
     <div class="research-actions">
       <div class="left">
@@ -2724,6 +2725,7 @@ function closeResearchModal(){
 
 async function researchAiRefine(action){
   const input = document.getElementById('research-input');
+  const titleInput = document.getElementById('research-title');
   const text = input.value.trim();
   if(!text) return;
   
@@ -2732,24 +2734,25 @@ async function researchAiRefine(action){
   const submitBtn = document.getElementById('research-submit-btn');
   submitBtn.disabled = true;
   
-  // Show progress overlay on textarea
+  // Show progress overlay
   input.style.opacity = '0.3';
+  titleInput.style.opacity = '0.3';
   const body = input.parentElement;
   const prog = document.createElement('div');
-  prog.className = 'research-refine-progress';
-  prog.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:8px;color:var(--cyan);font-size:13px;pointer-events:none';
+  prog.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:8px;color:var(--cyan);font-size:13px;pointer-events:none;z-index:1';
   prog.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div> Refining...';
   body.style.position = 'relative';
   body.appendChild(prog);
   
   const prompts = {
-    'improve': `Improve this research prompt to be clearer and more specific. Return ONLY the improved prompt:\n\n${text}`,
-    'expand': `Expand this research prompt with more specific sub-questions and areas to investigate. Return ONLY the expanded prompt:\n\n${text}`,
-    'focus': `Make this research prompt more focused and specific. Narrow it down to the most important aspects. Return ONLY the focused prompt:\n\n${text}`,
-    'translate': `Translate this research prompt to English. Return ONLY the translation:\n\n${text}`,
+    'improve': `Improve this research prompt to be clearer and more specific. Return ONLY the improved prompt, nothing else:\n\n${text}`,
+    'expand': `Expand this research prompt with more specific sub-questions and areas to investigate. Return ONLY the expanded prompt, nothing else:\n\n${text}`,
+    'focus': `Make this research prompt more focused and specific. Narrow it down to the most important aspects. Return ONLY the focused prompt, nothing else:\n\n${text}`,
+    'translate': `Translate this research prompt to English. Return ONLY the translation, nothing else:\n\n${text}`,
   };
   
   try {
+    // Refine prompt
     const res = await fetch('/api/ai/inline', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -2757,12 +2760,25 @@ async function researchAiRefine(action){
     });
     const data = await res.json();
     if(data.result) input.value = data.result;
+    
+    // Auto-generate title from refined prompt if title is empty or action changes content
+    const newText = data.result || text;
+    if(!titleInput.value.trim() || action !== 'translate'){
+      const titleRes = await fetch('/api/ai/inline', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: newText, action: 'custom', prompt: 'Generate a very short title (3-6 words) for this research topic. Return ONLY the title, no quotes, no explanation.'})
+      });
+      const titleData = await titleRes.json();
+      if(titleData.result) titleInput.value = titleData.result.replace(/^["']|["']$/g, '');
+    }
   } catch(e){}
   
   prog.remove();
   btns.forEach(b => b.disabled = false);
   submitBtn.disabled = false;
   input.style.opacity = '1';
+  titleInput.style.opacity = '1';
   input.focus();
 }
 
@@ -2770,8 +2786,10 @@ let researchController = null;
 
 async function submitResearch(){
   const input = document.getElementById('research-input');
+  const titleInput = document.getElementById('research-title');
   const topic = input.value.trim();
   if(!topic) return;
+  const title = titleInput.value.trim() || topic.split('.')[0].substring(0, 60);
   
   closeResearchModal();
   
@@ -2804,7 +2822,7 @@ async function submitResearch(){
     const res = await fetch('/api/ai/research', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({topic}),
+      body: JSON.stringify({topic, title}),
       signal: researchController.signal
     });
     clearTimeout(timer);
