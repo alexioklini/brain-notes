@@ -2423,13 +2423,16 @@ async function aiInline(action, language){
   if(!aiSelectedText) return;
   
   const toolbar = document.getElementById('ai-toolbar');
-  toolbar.innerHTML = '<div class="ai-loading"><div class="typing-dots"><span></span><span></span><span></span></div> AI working...</div>';
+  const inlineController = new AbortController();
+  toolbar.innerHTML = '<div class="ai-loading"><div class="typing-dots"><span></span><span></span><span></span></div> AI working...<button onclick="this.aiCtrl.abort()" style="margin-left:10px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--text2);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit">Cancel</button></div>';
+  toolbar.querySelector('button').aiCtrl = inlineController;
   
   try {
     const res = await fetch('/api/ai/inline', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text: aiSelectedText, action, language: language || 'English'})
+      body: JSON.stringify({text: aiSelectedText, action, language: language || 'English'}),
+      signal: inlineController.signal
     });
     const data = await res.json();
     
@@ -2476,7 +2479,7 @@ async function aiInline(action, language){
       }
     }
   } catch(e){
-    alert('AI Error: ' + e.message);
+    if(e.name !== 'AbortError') alert('AI Error: ' + e.message);
   }
   
   hideAiToolbar();
@@ -2591,20 +2594,21 @@ async function aiBlockCommand(action){
     const loadDiv = document.createElement('div');
     loadDiv.className = 'ai-loading';
     loadDiv.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div> AI researching "'+topic+'"...';
-    loadDiv.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);padding:12px 20px;border-radius:10px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+    loadDiv.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border);padding:12px 20px;border-radius:10px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;align-items:center;gap:10px';
     document.body.appendChild(loadDiv);
     const phases = ['Gathering sources...','Analyzing content...','Writing report...','Finalizing...'];
     let pi = 0;
+    const controller = new AbortController();
     const progressTimer = setInterval(() => {
       pi = Math.min(pi + 1, phases.length - 1);
       const span = loadDiv.querySelector('.research-phase');
       if(span) span.textContent = phases[pi];
     }, 20000);
-    loadDiv.innerHTML = '<div class="typing-dots" style="display:inline-flex;margin-right:8px"><span></span><span></span><span></span></div> <span class="research-phase">'+phases[0]+'</span>';
+    loadDiv.innerHTML = '<div class="typing-dots" style="display:inline-flex;margin-right:8px"><span></span><span></span><span></span></div> <span class="research-phase">'+phases[0]+'</span><button onclick="this.aiController.abort()" style="margin-left:12px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--text2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">Cancel</button>';
+    loadDiv.querySelector('button').aiController = controller;
     
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 290000); // 290s
+      const timer = setTimeout(() => controller.abort(), 290000);
       const res = await fetch('/api/ai/research', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2624,7 +2628,7 @@ async function aiBlockCommand(action){
     } catch(e){
       clearInterval(progressTimer);
       loadDiv.remove();
-      if(e.name === 'AbortError') alert('Research timed out — try a more specific topic.');
+      if(e.name === 'AbortError') {} // silent cancel
       else alert('Research failed: ' + e.message);
     }
     return;
