@@ -5,3 +5,7 @@ logs/
 *.db.bak-*
 __pycache__/
 .env
+
+# LLM config (contains API keys)
+llm_config.json
+.env

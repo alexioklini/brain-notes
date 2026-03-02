@@ -596,6 +596,89 @@ a{color:var(--cyan);text-decoration:none}
   </div>
 </div>
 
+<!-- LLM Settings Modal -->
+<div id="llm-settings-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center" onclick="if(event.target===this)closeLLMSettings()">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:640px;max-width:95vw;max-height:85vh;overflow-y:auto;padding:0">
+    <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--bg2);z-index:1;border-radius:12px 12px 0 0">
+      <h2 style="font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px"><i data-lucide="settings" style="width:18px;height:18px;color:var(--cyan)"></i> LLM Configuration</h2>
+      <button onclick="closeLLMSettings()" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:4px"><i data-lucide="x" style="width:18px;height:18px"></i></button>
+    </div>
+
+    <!-- Defaults -->
+    <div style="padding:20px 24px;border-bottom:1px solid var(--border)">
+      <h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Defaults</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">Default Model</label>
+          <select id="llm-default-model" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit" onchange="saveLLMDefaults()"></select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">Default Thinking</label>
+          <select id="llm-default-thinking" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit" onchange="saveLLMDefaults()">
+            <option value="off">Off</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:12px">
+        <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">Max Tokens</label>
+        <input id="llm-max-tokens" type="number" value="4096" min="256" max="65536" style="width:120px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;font-family:inherit" onchange="saveLLMDefaults()">
+      </div>
+    </div>
+
+    <!-- Providers -->
+    <div style="padding:20px 24px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Providers</h3>
+        <button onclick="showAddProvider()" style="background:var(--cyan);color:#000;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px"><i data-lucide="plus" style="width:14px;height:14px"></i> Add Provider</button>
+      </div>
+      <div id="llm-providers-list"></div>
+    </div>
+
+    <!-- Add/Edit Provider Form (hidden by default) -->
+    <div id="llm-provider-form" style="display:none;padding:0 24px 24px">
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:16px">
+        <h4 id="llm-form-title" style="font-size:14px;margin-bottom:12px">Add Provider</h4>
+        <input type="hidden" id="llm-form-editing">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Provider ID <span style="color:var(--red)">*</span></label>
+            <input id="llm-form-id" placeholder="e.g. minimax" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Display Name</label>
+            <input id="llm-form-name" placeholder="e.g. MiniMax" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Base URL <span style="color:var(--red)">*</span></label>
+          <input id="llm-form-url" placeholder="https://api.minimax.io/v1" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">API Key <span style="color:var(--red)">*</span></label>
+          <input id="llm-form-key" type="password" placeholder="sk-..." style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">API Type</label>
+          <select id="llm-form-apitype" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit">
+            <option value="openai">OpenAI Compatible</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Models (one per line: <code style="background:var(--bg);padding:1px 4px;border-radius:3px;font-size:11px">id | Display Name</code>)</label>
+          <textarea id="llm-form-models" rows="4" placeholder="MiniMax-M2.5 | MiniMax M2.5&#10;MiniMax-M2.1 | MiniMax M2.1" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="testProvider()" style="background:none;border:1px solid var(--border);color:var(--text2);padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit">🔌 Test Connection</button>
+          <button onclick="hideLLMForm()" style="background:none;border:1px solid var(--border);color:var(--text2);padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit">Cancel</button>
+          <button onclick="saveProvider()" style="background:var(--cyan);color:#000;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Save</button>
+        </div>
+        <div id="llm-test-result" style="margin-top:8px;font-size:12px;display:none"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Chat Panel -->
 <div id="chat-panel">
   <div class="chat-header">
@@ -604,11 +687,15 @@ a{color:var(--cyan);text-decoration:none}
       <span>Brain Notes AI</span>
     </div>
     <div class="chat-header-right">
-      <select id="chat-model" class="chat-model-select" onchange="updateChatModel(this.value)">
-        <option value="minimax-portal/MiniMax-M2.5">MiniMax M2.5</option>
-        <option value="minimax-portal/MiniMax-M2.1">MiniMax M2.1</option>
-        <option value="minimax-portal/MiniMax-M2.1-lightning">MiniMax Lightning</option>
+      <select id="chat-model" class="chat-model-select" onchange="updateChatModel(this.value)" title="AI Model"></select>
+      <select id="chat-thinking" class="chat-model-select" onchange="updateThinking(this.value)" title="Thinking Level" style="width:60px">
+        <option value="off" selected>💭 Off</option>
+        <option value="minimal">💭 Min</option>
+        <option value="low">💭 Low</option>
+        <option value="medium">💭 Med</option>
+        <option value="high">💭 High</option>
       </select>
+      <button class="chat-btn" onclick="openLLMSettings()" title="LLM Settings"><i data-lucide="settings" style="width:14px;height:14px"></i></button>
       <button class="chat-btn" onclick="clearChat()" title="Clear chat"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
       <button class="chat-btn" onclick="toggleChat()" title="Close"><i data-lucide="x" style="width:14px;height:14px"></i></button>
     </div>
@@ -2887,13 +2974,50 @@ document.addEventListener('selectionchange', () => {
 let chatOpen = false;
 const chatSessionId = 'session_' + Date.now();
 
+let chatLoaded = false;
+
 function toggleChat(){
   chatOpen = !chatOpen;
   document.getElementById('chat-panel').classList.toggle('open', chatOpen);
   document.getElementById('chat-toggle').classList.toggle('hidden', chatOpen);
   if(chatOpen){
+    if(!chatLoaded) loadChatHistory();
     document.getElementById('chat-input').focus();
     lucide.createIcons();
+  }
+}
+
+async function loadChatHistory(){
+  try {
+    const res = await fetch(`/api/chat/history?session_id=${chatSessionId}`);
+    if(!res.ok || !(res.headers.get('content-type')||'').includes('application/json')){
+      chatLoaded = true; return;
+    }
+    const messages = await res.json();
+    if(messages.length === 0){ chatLoaded = true; return; }
+    const messagesEl = document.getElementById('chat-messages');
+    // Remove welcome message
+    const welcome = messagesEl.querySelector('.chat-welcome');
+    if(welcome) welcome.remove();
+    // Render saved messages
+    for(const msg of messages){
+      const div = document.createElement('div');
+      div.className = `chat-msg ${msg.role}`;
+      if(msg.role === 'assistant'){
+        // Strip action blocks from display
+        const cleaned = msg.content.replace(/```action\s*\n[\s\S]*?\n```/g, '').trim();
+        div.innerHTML = `<div class="chat-msg-content">${renderMarkdown(cleaned)}</div>`;
+      } else {
+        div.textContent = msg.content;
+      }
+      messagesEl.appendChild(div);
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    lucide.createIcons();
+    chatLoaded = true;
+  } catch(e) {
+    console.error('Failed to load chat history:', e);
+    chatLoaded = true;
   }
 }
 
@@ -2941,6 +3065,10 @@ async function sendChat(){
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({message: msg, session_id: chatSessionId})
     });
+    const contentType = res.headers.get('content-type') || '';
+    if(!contentType.includes('application/json')){
+      throw new Error('Session expired — please refresh the page and log in again');
+    }
     const data = await res.json();
     
     typingEl.remove();
@@ -3034,6 +3162,7 @@ async function clearChat(){
     <i data-lucide="sparkles" style="width:24px;height:24px;color:var(--cyan)"></i>
     <p>Ask me anything about your notes, create pages, manage projects, or perform analysis.</p>
   </div>`;
+  chatLoaded = false;
   lucide.createIcons();
 }
 
@@ -3042,6 +3171,14 @@ async function updateChatModel(model){
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({model})
+  });
+}
+
+async function updateThinking(thinking){
+  await fetch('/api/chat/config', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({thinking})
   });
 }
 
@@ -3056,6 +3193,237 @@ document.addEventListener('keydown', e => {
 // ── Utils ──
 function esc(s){if(!s)return '';const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 function renderContent(s){if(!s)return '';if(/<[a-z][\s\S]*>/i.test(s))return s;return esc(s);}
+
+// ── LLM Settings ──────────────────────────────────────────────────────────
+
+async function populateModelDropdown(){
+  try {
+    const r = await fetch('/api/chat/config');
+    const config = await r.json();
+    const sel = document.getElementById('chat-model');
+    const models = config.available_models || [];
+    // Group by provider
+    const groups = {};
+    for(const m of models){
+      const g = m.group || 'Other';
+      if(!groups[g]) groups[g] = [];
+      groups[g].push(m);
+    }
+    sel.innerHTML = '';
+    for(const [group, ms] of Object.entries(groups)){
+      const og = document.createElement('optgroup');
+      og.label = group;
+      for(const m of ms){
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        if(m.id === config.model) opt.selected = true;
+        og.appendChild(opt);
+      }
+      sel.appendChild(og);
+    }
+    // Set thinking
+    const th = document.getElementById('chat-thinking');
+    if(th && config.thinking) th.value = config.thinking;
+  } catch(e){ console.error('Failed to load models:', e); }
+}
+
+// Load models on page load
+populateModelDropdown();
+
+async function openLLMSettings(){
+  const modal = document.getElementById('llm-settings-modal');
+  modal.style.display = 'flex';
+  hideLLMForm();
+  await loadLLMConfig();
+  lucide.createIcons();
+}
+
+function closeLLMSettings(){
+  document.getElementById('llm-settings-modal').style.display = 'none';
+  // Refresh model dropdown in case config changed
+  populateModelDropdown();
+}
+
+async function loadLLMConfig(){
+  const r = await fetch('/api/llm/config');
+  const config = await r.json();
+
+  // Populate defaults
+  const defModel = document.getElementById('llm-default-model');
+  defModel.innerHTML = '';
+  const models = [];
+  for(const prov of config.providers || []){
+    for(const m of prov.models || []){
+      const id = prov.id + '/' + m.id;
+      models.push({id, name: m.name || m.id, group: prov.name || prov.id});
+    }
+  }
+  const groups = {};
+  for(const m of models){
+    if(!groups[m.group]) groups[m.group] = [];
+    groups[m.group].push(m);
+  }
+  for(const [group, ms] of Object.entries(groups)){
+    const og = document.createElement('optgroup');
+    og.label = group;
+    for(const m of ms){
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name;
+      if(m.id === config.default_model) opt.selected = true;
+      og.appendChild(opt);
+    }
+    defModel.appendChild(og);
+  }
+
+  document.getElementById('llm-default-thinking').value = config.default_thinking || 'off';
+  document.getElementById('llm-max-tokens').value = config.max_tokens || 4096;
+
+  // Render providers
+  const list = document.getElementById('llm-providers-list');
+  if(!config.providers?.length){
+    list.innerHTML = '<p style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No providers configured. Add one to get started.</p>';
+    return;
+  }
+  list.innerHTML = config.providers.map(p => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px">
+            ${esc(p.name || p.id)}
+            <span style="font-size:11px;color:var(--text3);background:var(--bg);padding:2px 6px;border-radius:4px">${esc(p.api_type || 'openai')}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;font-family:'JetBrains Mono',monospace">${esc(p.base_url)}</div>
+          <div style="font-size:11px;color:var(--text4);margin-top:2px">Key: ${esc(p.api_key_masked || '••••')}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:6px">${(p.models||[]).map(m => '<span style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:11px;margin-right:4px">'+esc(m.name||m.id)+'</span>').join('')}</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button onclick="editProvider('${esc(p.id)}')" style="background:none;border:1px solid var(--border);color:var(--text2);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+          <button onclick="deleteProvider('${esc(p.id)}')" style="background:none;border:1px solid rgba(255,82,82,.3);color:var(--red);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function saveLLMDefaults(){
+  const default_model = document.getElementById('llm-default-model').value;
+  const default_thinking = document.getElementById('llm-default-thinking').value;
+  const max_tokens = parseInt(document.getElementById('llm-max-tokens').value) || 4096;
+  await fetch('/api/llm/config', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({default_model, default_thinking, max_tokens})
+  });
+}
+
+function showAddProvider(){
+  document.getElementById('llm-form-title').textContent = 'Add Provider';
+  document.getElementById('llm-form-editing').value = '';
+  document.getElementById('llm-form-id').value = '';
+  document.getElementById('llm-form-id').disabled = false;
+  document.getElementById('llm-form-name').value = '';
+  document.getElementById('llm-form-url').value = '';
+  document.getElementById('llm-form-key').value = '';
+  document.getElementById('llm-form-apitype').value = 'openai';
+  document.getElementById('llm-form-models').value = '';
+  document.getElementById('llm-test-result').style.display = 'none';
+  document.getElementById('llm-provider-form').style.display = 'block';
+}
+
+async function editProvider(id){
+  const r = await fetch('/api/llm/config');
+  const config = await r.json();
+  const prov = (config.providers || []).find(p => p.id === id);
+  if(!prov) return;
+  document.getElementById('llm-form-title').textContent = 'Edit Provider';
+  document.getElementById('llm-form-editing').value = id;
+  document.getElementById('llm-form-id').value = prov.id;
+  document.getElementById('llm-form-id').disabled = true;
+  document.getElementById('llm-form-name').value = prov.name || '';
+  document.getElementById('llm-form-url').value = prov.base_url || '';
+  document.getElementById('llm-form-key').value = prov.api_key || '';
+  document.getElementById('llm-form-apitype').value = prov.api_type || 'openai';
+  document.getElementById('llm-form-models').value = (prov.models||[]).map(m => m.id + (m.name && m.name !== m.id ? ' | ' + m.name : '')).join('\n');
+  document.getElementById('llm-test-result').style.display = 'none';
+  document.getElementById('llm-provider-form').style.display = 'block';
+}
+
+function hideLLMForm(){
+  document.getElementById('llm-provider-form').style.display = 'none';
+}
+
+function parseModelsText(text){
+  return text.split('\n').filter(l => l.trim()).map(line => {
+    const [id, name] = line.split('|').map(s => s.trim());
+    return {id: id, name: name || id};
+  });
+}
+
+async function saveProvider(){
+  const editing = document.getElementById('llm-form-editing').value;
+  const data = {
+    id: document.getElementById('llm-form-id').value.trim(),
+    name: document.getElementById('llm-form-name').value.trim(),
+    base_url: document.getElementById('llm-form-url').value.trim(),
+    api_key: document.getElementById('llm-form-key').value.trim(),
+    api_type: document.getElementById('llm-form-apitype').value,
+    models: parseModelsText(document.getElementById('llm-form-models').value),
+  };
+  if(!data.id || !data.base_url){
+    alert('Provider ID and Base URL are required');
+    return;
+  }
+  const url = editing ? '/api/llm/providers/' + encodeURIComponent(editing) : '/api/llm/providers';
+  const method = editing ? 'PUT' : 'POST';
+  const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  if(!r.ok){
+    const err = await r.json();
+    alert(err.error || 'Failed to save');
+    return;
+  }
+  hideLLMForm();
+  await loadLLMConfig();
+  lucide.createIcons();
+}
+
+async function deleteProvider(id){
+  if(!confirm(`Delete provider "${id}"?`)) return;
+  await fetch('/api/llm/providers/' + encodeURIComponent(id), {method:'DELETE'});
+  await loadLLMConfig();
+  lucide.createIcons();
+}
+
+async function testProvider(){
+  const base_url = document.getElementById('llm-form-url').value.trim();
+  const api_key = document.getElementById('llm-form-key').value.trim();
+  const api_type = document.getElementById('llm-form-apitype').value;
+  const models = parseModelsText(document.getElementById('llm-form-models').value);
+  const model = models[0]?.id || '';
+  const res = document.getElementById('llm-test-result');
+  res.style.display = 'block';
+  res.style.color = 'var(--text3)';
+  res.textContent = '⏳ Testing connection...';
+  try {
+    const r = await fetch('/api/llm/test', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({base_url, api_key, model, api_type})
+    });
+    const data = await r.json();
+    if(data.ok){
+      res.style.color = 'var(--green)';
+      res.textContent = '✅ Connection OK — Response: ' + (data.response || '').slice(0, 80);
+    } else {
+      res.style.color = 'var(--red)';
+      res.textContent = '❌ ' + (data.error || 'Connection failed');
+    }
+  } catch(e){
+    res.style.color = 'var(--red)';
+    res.textContent = '❌ ' + e.message;
+  }
+}
 </script>
 </body>
 </html>

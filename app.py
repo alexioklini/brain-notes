@@ -87,6 +87,16 @@ def init_db():
                 FOREIGN KEY (database_id) REFERENCES databases(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL DEFAULT 'default',
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id);
+
             CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
                 id, title, content='pages', content_rowid=rowid
             );
@@ -1052,27 +1062,72 @@ Return ONLY the translated lines, one per line, with the same [type] prefixes.
 
 import httpx, re
 
-# Load API key from OpenClaw config
-def get_api_config():
-    """Use OpenClaw Gateway chat completions with notes-chat agent."""
-    config_path = os.path.expanduser('~/.openclaw/openclaw.json')
-    try:
-        with open(config_path) as f:
-            config = json.load(f)
-        gw = config.get('gateway', {})
-        token = gw.get('auth', {}).get('token', '')
-        port = gw.get('port', 18789)
-        return {
-            'api_key': token,
-            'base_url': f'http://127.0.0.1:{port}',
-        }
-    except:
-        return {'api_key': '', 'base_url': 'http://127.0.0.1:18789'}
+# ── LLM Configuration (file-based, no OpenClaw dependency) ──────────────────
+LLM_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'llm_config.json')
+THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high']
 
-# Chat configuration
+def _load_llm_config():
+    """Load LLM config from llm_config.json."""
+    try:
+        with open(LLM_CONFIG_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"providers": [], "default_model": "", "default_thinking": "off", "max_tokens": 4096}
+
+def _save_llm_config(config):
+    """Save LLM config to llm_config.json."""
+    with open(LLM_CONFIG_PATH, 'w') as f:
+        json.dump(config, f, indent=2)
+
+def _get_available_models():
+    """Build flat model list from all providers."""
+    config = _load_llm_config()
+    models = []
+    for prov in config.get('providers', []):
+        for m in prov.get('models', []):
+            models.append({
+                'id': f"{prov['id']}/{m['id']}",
+                'name': m.get('name', m['id']),
+                'group': prov.get('name', prov['id']),
+                'provider_id': prov['id'],
+            })
+    return models
+
+def get_api_config():
+    """Get the API config for the currently selected model."""
+    config = _load_llm_config()
+    model_ref = CHAT_CONFIG.get('model', config.get('default_model', ''))
+    # Parse provider_id/model_id
+    if '/' in model_ref:
+        provider_id, model_id = model_ref.split('/', 1)
+    else:
+        provider_id, model_id = '', model_ref
+    # Find the provider
+    for prov in config.get('providers', []):
+        if prov['id'] == provider_id:
+            return {
+                'base_url': prov.get('base_url', ''),
+                'api_key': prov.get('api_key', ''),
+                'model': model_id,
+                'api_type': prov.get('api_type', 'openai'),
+            }
+    # Fallback: use first provider
+    if config.get('providers'):
+        prov = config['providers'][0]
+        return {
+            'base_url': prov.get('base_url', ''),
+            'api_key': prov.get('api_key', ''),
+            'model': model_id or (prov['models'][0]['id'] if prov.get('models') else ''),
+            'api_type': prov.get('api_type', 'openai'),
+        }
+    return {'base_url': '', 'api_key': '', 'model': '', 'api_type': 'openai'}
+
+# Initialize runtime chat config from saved defaults
+_init_config = _load_llm_config()
 CHAT_CONFIG = {
-    'model': 'minimax-portal/MiniMax-M2.5',
-    'max_tokens': 4096,
+    'model': _init_config.get('default_model', ''),
+    'max_tokens': _init_config.get('max_tokens', 4096),
+    'thinking': _init_config.get('default_thinking', 'off'),
 }
 
 # Gather all content from the app for RAG context
@@ -1260,180 +1315,45 @@ TOOLS = [
 ]
 
 def execute_tool(name, input_data):
-    """Execute a tool call and return the result."""
-    try:
-        if name == "search_content":
-            q = input_data['query']
-            with get_db() as conn:
-                pages = conn.execute(
-                    "SELECT id, title, icon FROM pages WHERE title LIKE ? AND workspace != '_db_item' LIMIT 10",
-                    (f'%{q}%',)
-                ).fetchall()
-                blocks = conn.execute(
-                    """SELECT b.page_id, b.content, p.title FROM blocks b 
-                       JOIN pages p ON b.page_id = p.id 
-                       WHERE b.content LIKE ? AND p.workspace != '_db_item' LIMIT 10""",
-                    (f'%{q}%',)
-                ).fetchall()
-                items = conn.execute(
-                    "SELECT i.id, i.title, d.title as db_title FROM db_items i JOIN databases d ON i.database_id = d.id WHERE i.title LIKE ? LIMIT 10",
-                    (f'%{q}%',)
-                ).fetchall()
-            results = []
-            for p in pages: results.append(f"Page: {p['title']} (id: {p['id']})")
-            for b in blocks: results.append(f"In '{b['title']}': {b['content'][:200]}")
-            for i in items: results.append(f"Item '{i['title']}' in {i['db_title']}")
-            return '\n'.join(results) if results else "No results found."
-
-        elif name == "create_page":
-            page_id = gen_id()
-            title = input_data['title']
-            icon = input_data.get('icon', 'file-text')
-            with get_db() as conn:
-                conn.execute(
-                    "INSERT INTO pages (id, title, icon, workspace, sort_order) VALUES (?,?,?,'docs',0)",
-                    (page_id, title, icon)
-                )
-                blocks = input_data.get('blocks', [{'type': 'text', 'content': ''}])
-                for i, block in enumerate(blocks):
-                    bid = gen_id()
-                    conn.execute(
-                        "INSERT INTO blocks (id, page_id, type, content, sort_order) VALUES (?,?,?,?,?)",
-                        (bid, page_id, block['type'], block['content'], i)
-                    )
-                conn.commit()
-            return json.dumps({"created": page_id, "title": title})
-
-        elif name == "edit_page":
-            page_id = input_data['page_id']
-            with get_db() as conn:
-                if 'title' in input_data:
-                    conn.execute("UPDATE pages SET title=?, updated_at=? WHERE id=?", (input_data['title'], now(), page_id))
-                if 'icon' in input_data:
-                    conn.execute("UPDATE pages SET icon=?, updated_at=? WHERE id=?", (input_data['icon'], now(), page_id))
-                if 'append_blocks' in input_data:
-                    max_order = conn.execute("SELECT COALESCE(MAX(sort_order),0) FROM blocks WHERE page_id=?", (page_id,)).fetchone()[0]
-                    for i, block in enumerate(input_data['append_blocks']):
-                        bid = gen_id()
-                        conn.execute(
-                            "INSERT INTO blocks (id, page_id, type, content, sort_order) VALUES (?,?,?,?,?)",
-                            (bid, page_id, block['type'], block['content'], max_order + 1 + i)
-                        )
-                conn.commit()
-            return json.dumps({"updated": page_id})
-
-        elif name == "create_project_item":
-            db_id = input_data['database_id']
-            item_id = gen_id()
-            title = input_data['title']
-            props = input_data.get('properties', {})
-            with get_db() as conn:
-                max_order = conn.execute("SELECT COALESCE(MAX(sort_order),0) FROM db_items WHERE database_id=?", (db_id,)).fetchone()[0]
-                page_id = gen_id()
-                conn.execute("INSERT INTO pages (id, title, workspace) VALUES (?,?,'_db_item')", (page_id, title))
-                conn.execute("INSERT INTO blocks (id, page_id, type, content, sort_order) VALUES (?,?,'text','',0)", (gen_id(), page_id))
-                conn.execute(
-                    "INSERT INTO db_items (id, database_id, title, properties, page_id, sort_order) VALUES (?,?,?,?,?,?)",
-                    (item_id, db_id, title, json.dumps(props), page_id, max_order + 1)
-                )
-                conn.commit()
-            return json.dumps({"created": item_id, "title": title})
-
-        elif name == "update_project_item":
-            db_id = input_data['database_id']
-            item_id = input_data['item_id']
-            with get_db() as conn:
-                if 'title' in input_data:
-                    conn.execute("UPDATE db_items SET title=?, updated_at=? WHERE id=?", (input_data['title'], now(), item_id))
-                if 'properties' in input_data:
-                    existing = conn.execute("SELECT properties FROM db_items WHERE id=?", (item_id,)).fetchone()
-                    props = json.loads(existing['properties']) if existing and existing['properties'] else {}
-                    props.update(input_data['properties'])
-                    conn.execute("UPDATE db_items SET properties=?, updated_at=? WHERE id=?", (json.dumps(props), now(), item_id))
-                conn.commit()
-            return json.dumps({"updated": item_id})
-
-        elif name == "create_database":
-            # Delegate to existing endpoint logic
-            from flask import Request
-            db_id = gen_id()
-            title = input_data['title']
-            workspace = input_data['workspace']
-            desc = input_data.get('description', '')
-            # Generate default schema
-            if workspace == 'projects':
-                schema = [
-                    {'id': gen_id(), 'name': 'Status', 'type': 'select',
-                     'options': [{'id': gen_id(), 'name': s, 'color': c} for s, c in
-                                [('Not Started','#6B7280'),('In Progress','#3B82F6'),('Done','#10B981'),('Blocked','#EF4444')]]},
-                    {'id': gen_id(), 'name': 'Priority', 'type': 'select',
-                     'options': [{'id': gen_id(), 'name': s, 'color': c} for s, c in
-                                [('Low','#6B7280'),('Medium','#F59E0B'),('High','#EF4444')]]},
-                    {'id': gen_id(), 'name': 'Due Date', 'type': 'date'},
-                ]
-            else:
-                schema = [
-                    {'id': gen_id(), 'name': 'Status', 'type': 'select',
-                     'options': [{'id': gen_id(), 'name': s, 'color': c} for s, c in
-                                [('Draft','#6B7280'),('In Review','#F59E0B'),('Published','#10B981')]]},
-                    {'id': gen_id(), 'name': 'Category', 'type': 'select', 'options': []},
-                ]
-            with get_db() as conn:
-                conn.execute(
-                    "INSERT INTO databases (id, title, icon, workspace, description, properties_schema, default_view) VALUES (?,?,?,?,?,?,?)",
-                    (db_id, title, 'layout-grid' if workspace=='projects' else 'book-open',
-                     workspace, desc, json.dumps(schema), 'board' if workspace=='projects' else 'table')
-                )
-                view_id = gen_id()
-                vtype = 'board' if workspace == 'projects' else 'table'
-                group_by = schema[0]['id'] if schema[0]['type'] == 'select' else None
-                conn.execute(
-                    "INSERT INTO db_views (id, database_id, name, type, config, sort_order) VALUES (?,?,?,?,?,0)",
-                    (view_id, db_id, 'Default', vtype, json.dumps({'group_by': group_by} if group_by else {}))
-                )
-                conn.commit()
-            return json.dumps({"created": db_id, "title": title, "workspace": workspace})
-
-        elif name == "delete_page":
-            page_id = input_data['page_id']
-            with get_db() as conn:
-                conn.execute("DELETE FROM blocks WHERE page_id=?", (page_id,))
-                conn.execute("DELETE FROM pages WHERE id=?", (page_id,))
-                conn.commit()
-            return json.dumps({"deleted": page_id})
-
-        elif name == "get_page_content":
-            page_id = input_data['page_id']
-            with get_db() as conn:
-                page = conn.execute("SELECT * FROM pages WHERE id=?", (page_id,)).fetchone()
-                if not page:
-                    return "Page not found."
-                blocks = conn.execute(
-                    "SELECT type, content, properties FROM blocks WHERE page_id=? ORDER BY sort_order", (page_id,)
-                ).fetchall()
-            result = f"# {page['title']}\n\n"
-            for b in blocks:
-                prefix = {'h1': '# ', 'h2': '## ', 'h3': '### ', 'bullet': '- ', 'quote': '> ', 'code': '```\n'}.get(b['type'], '')
-                suffix = '\n```' if b['type'] == 'code' else ''
-                if b['type'] == 'numbered':
-                    prefix = '1. '
-                if b['type'] == 'todo':
-                    props = json.loads(b['properties']) if b['properties'] else {}
-                    prefix = '[x] ' if props.get('checked') else '[ ] '
-                result += f"{prefix}{b['content']}{suffix}\n"
-            return result
-
-        return f"Unknown tool: {name}"
-    except Exception as e:
-        return f"Error executing {name}: {str(e)}"
+    """Execute a tool call via the MCP server (stdio protocol).
+    All tool logic lives in mcp_server.py → notes_tools.py."""
+    from mcp_client import call_tool
+    return call_tool(name, input_data)
 
 
 # Chat history stored in memory (per-session, resets on restart)
 chat_histories = {}
 
+def _load_chat_history(session_id):
+    """Load chat history from DB into memory cache."""
+    if session_id not in chat_histories:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT role, content FROM chat_messages WHERE session_id=? ORDER BY id",
+                (session_id,)
+            ).fetchall()
+            chat_histories[session_id] = [{"role": r['role'], "content": r['content']} for r in rows]
+    return chat_histories[session_id]
+
+def _save_chat_message(session_id, role, content):
+    """Persist a single chat message to DB."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO chat_messages (session_id, role, content) VALUES (?,?,?)",
+            (session_id, role, content)
+        )
+        conn.commit()
+
+def _clear_chat_history(session_id):
+    """Clear chat history from DB and memory."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM chat_messages WHERE session_id=?", (session_id,))
+        conn.commit()
+    chat_histories.pop(session_id, None)
+
 @app.route('/api/chat/config', methods=['GET'])
 def get_chat_config():
-    return jsonify(CHAT_CONFIG)
+    return jsonify({**CHAT_CONFIG, 'available_models': _get_available_models(), 'thinking_levels': THINKING_LEVELS})
 
 @app.route('/api/chat/config', methods=['PUT'])
 def update_chat_config():
@@ -1442,7 +1362,121 @@ def update_chat_config():
         CHAT_CONFIG['model'] = data['model']
     if 'max_tokens' in data:
         CHAT_CONFIG['max_tokens'] = data['max_tokens']
-    return jsonify(CHAT_CONFIG)
+    if 'thinking' in data and data['thinking'] in THINKING_LEVELS:
+        CHAT_CONFIG['thinking'] = data['thinking']
+    return jsonify({**CHAT_CONFIG, 'available_models': _get_available_models(), 'thinking_levels': THINKING_LEVELS})
+
+# ── LLM Provider Management API ────────────────────────────────────────────
+
+@app.route('/api/llm/config', methods=['GET'])
+def get_llm_config():
+    """Get full LLM config (providers, defaults)."""
+    config = _load_llm_config()
+    # Mask API keys for frontend display
+    safe = json.loads(json.dumps(config))
+    for prov in safe.get('providers', []):
+        key = prov.get('api_key', '')
+        if len(key) > 8:
+            prov['api_key_masked'] = key[:4] + '•' * (len(key) - 8) + key[-4:]
+        else:
+            prov['api_key_masked'] = '•' * len(key)
+    return jsonify(safe)
+
+@app.route('/api/llm/config', methods=['PUT'])
+def update_llm_config():
+    """Update defaults (default_model, default_thinking, max_tokens)."""
+    data = request.get_json(force=True)
+    config = _load_llm_config()
+    if 'default_model' in data:
+        config['default_model'] = data['default_model']
+        CHAT_CONFIG['model'] = data['default_model']
+    if 'default_thinking' in data:
+        config['default_thinking'] = data['default_thinking']
+        CHAT_CONFIG['thinking'] = data['default_thinking']
+    if 'max_tokens' in data:
+        config['max_tokens'] = data['max_tokens']
+        CHAT_CONFIG['max_tokens'] = data['max_tokens']
+    _save_llm_config(config)
+    return jsonify(config)
+
+@app.route('/api/llm/providers', methods=['GET'])
+def list_providers():
+    config = _load_llm_config()
+    return jsonify(config.get('providers', []))
+
+@app.route('/api/llm/providers', methods=['POST'])
+def add_provider():
+    data = request.get_json(force=True)
+    config = _load_llm_config()
+    provider = {
+        'id': data.get('id', '').strip(),
+        'name': data.get('name', '').strip(),
+        'base_url': data.get('base_url', '').strip(),
+        'api_key': data.get('api_key', '').strip(),
+        'api_type': data.get('api_type', 'openai'),
+        'models': data.get('models', []),
+    }
+    if not provider['id'] or not provider['base_url']:
+        return jsonify({'error': 'id and base_url are required'}), 400
+    # Check for duplicate id
+    if any(p['id'] == provider['id'] for p in config.get('providers', [])):
+        return jsonify({'error': f"Provider '{provider['id']}' already exists"}), 409
+    config.setdefault('providers', []).append(provider)
+    _save_llm_config(config)
+    return jsonify(provider), 201
+
+@app.route('/api/llm/providers/<provider_id>', methods=['PUT'])
+def update_provider(provider_id):
+    data = request.get_json(force=True)
+    config = _load_llm_config()
+    for prov in config.get('providers', []):
+        if prov['id'] == provider_id:
+            if 'name' in data: prov['name'] = data['name']
+            if 'base_url' in data: prov['base_url'] = data['base_url']
+            if 'api_key' in data: prov['api_key'] = data['api_key']
+            if 'api_type' in data: prov['api_type'] = data['api_type']
+            if 'models' in data: prov['models'] = data['models']
+            _save_llm_config(config)
+            return jsonify(prov)
+    return jsonify({'error': 'Provider not found'}), 404
+
+@app.route('/api/llm/providers/<provider_id>', methods=['DELETE'])
+def delete_provider(provider_id):
+    config = _load_llm_config()
+    config['providers'] = [p for p in config.get('providers', []) if p['id'] != provider_id]
+    _save_llm_config(config)
+    return jsonify({'ok': True})
+
+@app.route('/api/llm/test', methods=['POST'])
+def test_provider():
+    """Test a provider connection by sending a simple chat completion."""
+    data = request.get_json(force=True)
+    base_url = data.get('base_url', '').rstrip('/')
+    api_key = data.get('api_key', '')
+    model = data.get('model', '')
+    api_type = data.get('api_type', 'openai')
+    try:
+        if api_type == 'anthropic':
+            url = f"{base_url}/v1/messages"
+            headers = {'x-api-key': api_key, 'content-type': 'application/json', 'anthropic-version': '2023-06-01'}
+            body = {'model': model, 'max_tokens': 20, 'messages': [{'role': 'user', 'content': 'Say "ok"'}]}
+            with httpx.Client(timeout=15) as client:
+                r = client.post(url, headers=headers, json=body)
+                r.raise_for_status()
+                resp = r.json()
+            text = ' '.join(b.get('text', '') for b in resp.get('content', []) if b.get('type') == 'text')
+        else:
+            url = f"{base_url}/chat/completions"
+            headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+            body = {'model': model, 'max_tokens': 20, 'messages': [{'role': 'user', 'content': 'Say "ok"'}]}
+            with httpx.Client(timeout=15) as client:
+                r = client.post(url, headers=headers, json=body)
+                r.raise_for_status()
+                resp = r.json()
+            text = resp.get('choices', [{}])[0].get('message', {}).get('content', '')
+        return jsonify({'ok': True, 'response': text[:100]})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -1457,10 +1491,8 @@ def chat():
     if not api_config['api_key']:
         return jsonify({'error': 'No API key configured'}), 500
     
-    # Get or create chat history
-    if session_id not in chat_histories:
-        chat_histories[session_id] = []
-    history = chat_histories[session_id]
+    # Get or create chat history (loads from DB if not cached)
+    history = _load_chat_history(session_id)
     
     # Build context
     all_content = gather_all_content()
@@ -1471,56 +1503,76 @@ You have full access to all content in the app and can create, edit, search, and
 ## Current App Content
 {all_content}
 
-## Actions
-To perform actions, include a JSON block in your response wrapped in ```action tags. You can include multiple action blocks. Always include a text response alongside actions.
+## How Actions Work (IMPORTANT!)
+You DO have the ability to perform actions. Actions are NOT separate tools or function calls.
+To perform an action, simply include a JSON block wrapped in ```action``` fenced code tags in your text response.
+The backend will parse these blocks and execute them automatically. This IS your toolset — just write the JSON blocks.
+You can include multiple action blocks. Always include a human-readable explanation alongside actions.
 
-Available actions:
+## Available Actions
 
-### create_page
+### create_page — Create a new page
 ```action
 {{"action":"create_page","title":"Page Title","icon":"lucide-icon-name","blocks":[{{"type":"h1","content":"Heading"}},{{"type":"bullet","content":"Item 1"}},{{"type":"todo","content":"Task 1"}}]}}
 ```
 Block types: text, h1, h2, h3, bullet, numbered, todo, quote, callout, code, divider
 
-### edit_page
+### edit_page — Edit an existing page (change title, icon, replace or append blocks)
+To REPLACE all content on a page (rewrite it):
 ```action
-{{"action":"edit_page","page_id":"id","title":"New Title","append_blocks":[{{"type":"text","content":"Added text"}}]}}
+{{"action":"edit_page","page_id":"THE_PAGE_ID","title":"New Title","replace_blocks":[{{"type":"h1","content":"New Heading"}},{{"type":"text","content":"New content"}}]}}
 ```
+To APPEND content at the end of a page:
+```action
+{{"action":"edit_page","page_id":"THE_PAGE_ID","append_blocks":[{{"type":"text","content":"Added text"}}]}}
+```
+You can set title, icon, replace_blocks, and/or append_blocks. Use the page_id from the content listing above.
 
-### create_project_item
+### create_project_item — Add an item to a database/project
 ```action
 {{"action":"create_project_item","database_id":"id","title":"Item Title","properties":{{"prop_id":"value"}}}}
 ```
 
-### create_database
+### create_database — Create a new database
 ```action
 {{"action":"create_database","title":"DB Title","workspace":"projects|wiki","description":"..."}}
 ```
 
-### delete_page
+### delete_page — Delete a page
 ```action
 {{"action":"delete_page","page_id":"id"}}
 ```
 
 ## Guidelines
 - Be concise and helpful
+- When asked to edit or update a page, USE the edit_page action — don't say you can't
 - When creating content, use appropriate block types
 - Use Lucide icon names for page icons (e.g., 'target', 'lightbulb', 'bar-chart-3', 'flask-conical', 'clipboard-list')
 - Always respond with a human-readable message. Put action blocks at the END of your response.
 - For analysis tasks, create a well-structured page with the results
+- NEVER say "I don't have that tool" — all actions listed above work by including the JSON block in your response
 """
     
-    # Add user message to history
+    # Add user message to history (memory + DB)
     history.append({"role": "user", "content": message})
+    _save_chat_message(session_id, "user", message)
     
     # Keep history manageable (last 20 messages)
     if len(history) > 20:
         history = history[-20:]
         chat_histories[session_id] = history
+        # Trim DB too — keep only the last 20
+        with get_db() as conn:
+            conn.execute(
+                "DELETE FROM chat_messages WHERE session_id=? AND id NOT IN "
+                "(SELECT id FROM chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 20)",
+                (session_id, session_id)
+            )
+            conn.commit()
     
-    # Call LLM
+    # Call LLM — use native tool_use for Anthropic/MiniMax, fallback to gateway for others
     try:
-        response = call_claude(api_config, system_prompt, history)
+        response = call_llm_with_tools(api_config, system_prompt, history)
     except Exception as e:
         logger.error(f"LLM API error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -1533,8 +1585,10 @@ Block types: text, h1, h2, h3, bullet, numbered, todo, quote, callout, code, div
     
     full_response = '\n'.join(text_parts)
     
-    # Parse and execute action blocks
-    tool_results = []
+    # Get tool results from native tool-use loop (already executed)
+    tool_results = response.get('tool_results', [])
+    
+    # Also parse any text-based action blocks (fallback for models that don't use native tools)
     action_pattern = re.compile(r'```action\s*\n(.*?)\n```', re.DOTALL)
     for match in action_pattern.finditer(full_response):
         try:
@@ -1553,6 +1607,7 @@ Block types: text, h1, h2, h3, bullet, numbered, todo, quote, callout, code, div
     
     history.append({"role": "assistant", "content": full_response})
     chat_histories[session_id] = history
+    _save_chat_message(session_id, "assistant", full_response)
     
     return jsonify({
         'response': assistant_message,
@@ -1564,7 +1619,7 @@ Block types: text, h1, h2, h3, bullet, numbered, todo, quote, callout, code, div
 @app.route('/api/chat/history', methods=['GET'])
 def get_chat_history():
     session_id = request.args.get('session_id', 'default')
-    history = chat_histories.get(session_id, [])
+    history = _load_chat_history(session_id)
     # Flatten to simple messages
     messages = []
     for msg in history:
@@ -1585,41 +1640,320 @@ def get_chat_history():
 @app.route('/api/chat/clear', methods=['POST'])
 def clear_chat():
     session_id = request.get_json(force=True).get('session_id', 'default')
-    chat_histories.pop(session_id, None)
+    _clear_chat_history(session_id)
     return jsonify({'ok': True})
 
 
-def call_claude(api_config, system, messages):
-    """Call LLM via OpenClaw Gateway chat completions with notes-chat agent."""
-    url = f"{api_config['base_url']}/v1/chat/completions"
+# Tool definitions for LLM tool_use (Anthropic input_schema format, converted to OpenAI at call time)
+NATIVE_TOOLS = [
+    {
+        "name": "search_notes",
+        "description": "Search across all pages, blocks, and database items by keyword.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "Search query"}},
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "list_pages",
+        "description": "List all pages in the notes app.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"workspace": {"type": "string", "description": "Filter: 'docs', 'all' (default)", "default": "all"}},
+        }
+    },
+    {
+        "name": "get_page_content",
+        "description": "Get the full content of a specific page.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string", "description": "Page ID"}},
+            "required": ["page_id"]
+        }
+    },
+    {
+        "name": "create_page",
+        "description": "Create a new page with content blocks. Block types: text, h1, h2, h3, bullet, numbered, todo, quote, callout, code, divider",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "icon": {"type": "string", "description": "Lucide icon name", "default": "file-text"},
+                "blocks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string"},
+                            "content": {"type": "string"}
+                        }
+                    }
+                }
+            },
+            "required": ["title"]
+        }
+    },
+    {
+        "name": "edit_page",
+        "description": "Edit an existing page. Can change title, icon, replace all blocks, or append blocks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "page_id": {"type": "string"},
+                "title": {"type": "string", "description": "New title (optional)"},
+                "icon": {"type": "string", "description": "New icon (optional)"},
+                "replace_blocks": {
+                    "type": "array",
+                    "description": "Replace ALL content with these blocks",
+                    "items": {"type": "object", "properties": {"type": {"type": "string"}, "content": {"type": "string"}}}
+                },
+                "append_blocks": {
+                    "type": "array",
+                    "description": "Append these blocks at the end",
+                    "items": {"type": "object", "properties": {"type": {"type": "string"}, "content": {"type": "string"}}}
+                }
+            },
+            "required": ["page_id"]
+        }
+    },
+    {
+        "name": "delete_page",
+        "description": "Delete a page and all its blocks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"page_id": {"type": "string"}},
+            "required": ["page_id"]
+        }
+    },
+    {
+        "name": "list_databases",
+        "description": "List all databases (projects and knowledge bases) with schemas.",
+        "input_schema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_database_items",
+        "description": "Get all items in a database.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"database_id": {"type": "string"}},
+            "required": ["database_id"]
+        }
+    },
+    {
+        "name": "create_project_item",
+        "description": "Add an item to a database.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "database_id": {"type": "string"},
+                "title": {"type": "string"},
+                "properties": {"type": "object", "description": "Property ID to value mapping"}
+            },
+            "required": ["database_id", "title"]
+        }
+    },
+    {
+        "name": "create_database",
+        "description": "Create a new database (project board or knowledge base).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "workspace": {"type": "string", "enum": ["projects", "wiki"]},
+                "description": {"type": "string"}
+            },
+            "required": ["title", "workspace"]
+        }
+    },
+]
+
+
+def call_llm_with_tools(api_config, system, messages, tools=None, max_loops=5):
+    """Call LLM with tool-use loop. Supports OpenAI and Anthropic APIs."""
+    api_type = api_config.get('api_type', 'openai')
+    if api_type == 'anthropic':
+        return _call_anthropic_with_tools(api_config, system, messages, tools, max_loops)
+    else:
+        return _call_openai_with_tools(api_config, system, messages, tools, max_loops)
+
+
+def _call_openai_with_tools(api_config, system, messages, tools=None, max_loops=5):
+    """Call LLM via OpenAI-compatible chat/completions API with tool-use loop."""
+    import re as _re
+
+    base_url = api_config['base_url'].rstrip('/')
+    api_key = api_config['api_key']
+    model = api_config.get('model', CHAT_CONFIG['model'])
+
+    url = f"{base_url}/chat/completions"
     headers = {
-        'Authorization': f"Bearer {api_config['api_key']}",
-        'content-type': 'application/json',
-        'x-openclaw-agent-id': 'notes-chat',
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json',
     }
-    
+
+    # Build OpenAI-format messages
     oai_messages = [{"role": "system", "content": system}]
     for msg in messages:
         if isinstance(msg.get('content'), str):
             oai_messages.append({"role": msg['role'], "content": msg['content']})
-    
-    body = {
-        'model': CHAT_CONFIG['model'],
-        'max_tokens': CHAT_CONFIG['max_tokens'],
-        'messages': oai_messages,
-    }
-    
-    with httpx.Client(timeout=300) as client:
-        r = client.post(url, headers=headers, json=body)
-        r.raise_for_status()
-        oai_resp = r.json()
-    
-    choice = oai_resp.get('choices', [{}])[0]
-    text = choice.get('message', {}).get('content', '')
-    
+
+    # Convert tool schemas to OpenAI format
+    oai_tools = []
+    for t in (tools or NATIVE_TOOLS):
+        oai_tools.append({
+            "type": "function",
+            "function": {
+                "name": t['name'],
+                "description": t.get('description', ''),
+                "parameters": t.get('input_schema', {"type": "object", "properties": {}}),
+            }
+        })
+
+    tool_results_all = []
+
+    for loop in range(max_loops):
+        body = {
+            'model': model,
+            'max_tokens': CHAT_CONFIG.get('max_tokens', 4096),
+            'messages': oai_messages,
+            'tools': oai_tools,
+        }
+
+        with httpx.Client(timeout=300) as client:
+            r = client.post(url, headers=headers, json=body)
+            r.raise_for_status()
+            resp = r.json()
+
+        choice = resp.get('choices', [{}])[0]
+        msg = choice.get('message', {})
+        finish_reason = choice.get('finish_reason', 'stop')
+
+        if finish_reason != 'tool_calls' and not msg.get('tool_calls'):
+            text = msg.get('content', '') or ''
+            text = _re.sub(r'<think>.*?</think>\s*', '', text, flags=_re.DOTALL).strip()
+            return {
+                'content': [{"type": "text", "text": text}],
+                'stop_reason': 'end_turn',
+                'tool_results': tool_results_all,
+            }
+
+        tool_calls = msg.get('tool_calls', [])
+        oai_messages.append(msg)
+
+        for tc in tool_calls:
+            func = tc.get('function', {})
+            tool_name = func.get('name', '')
+            try:
+                tool_input = json.loads(func.get('arguments', '{}'))
+            except json.JSONDecodeError:
+                tool_input = {}
+            tool_id = tc.get('id', '')
+
+            logger.info(f"Tool call: {tool_name}({json.dumps(tool_input)[:200]})")
+            result = execute_tool(tool_name, tool_input)
+            tool_results_all.append({"tool": tool_name, "input": tool_input, "result": result})
+
+            oai_messages.append({
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": str(result),
+            })
+
     return {
-        'content': [{"type": "text", "text": text}],
-        'stop_reason': 'end_turn',
+        'content': [{"type": "text", "text": "I performed several actions but reached the maximum number of steps."}],
+        'stop_reason': 'max_loops',
+        'tool_results': tool_results_all,
+    }
+
+
+def _call_anthropic_with_tools(api_config, system, messages, tools=None, max_loops=5):
+    """Call LLM via Anthropic Messages API with native tool_use loop."""
+
+    base_url = api_config['base_url'].rstrip('/')
+    api_key = api_config['api_key']
+    model = api_config.get('model', CHAT_CONFIG['model'])
+
+    url = f"{base_url}/v1/messages"
+    headers = {
+        'x-api-key': api_key,
+        'content-type': 'application/json',
+        'anthropic-version': '2023-06-01',
+    }
+
+    # Anthropic tools use input_schema directly
+    anthropic_tools = []
+    for t in (tools or NATIVE_TOOLS):
+        anthropic_tools.append({
+            "name": t['name'],
+            "description": t.get('description', ''),
+            "input_schema": t.get('input_schema', {"type": "object", "properties": {}}),
+        })
+
+    # Convert messages to Anthropic format
+    anthropic_messages = []
+    for msg in messages:
+        if isinstance(msg.get('content'), str):
+            anthropic_messages.append({"role": msg['role'], "content": msg['content']})
+
+    tool_results_all = []
+
+    for loop in range(max_loops):
+        body = {
+            'model': model,
+            'max_tokens': CHAT_CONFIG.get('max_tokens', 4096),
+            'system': system,
+            'messages': anthropic_messages,
+            'tools': anthropic_tools,
+        }
+
+        # Add thinking if enabled
+        thinking = CHAT_CONFIG.get('thinking', 'off')
+        if thinking != 'off':
+            thinking_budget = {'minimal': 1024, 'low': 2048, 'medium': 5000, 'high': 10000}.get(thinking, 5000)
+            body['thinking'] = {'type': 'enabled', 'budget_tokens': thinking_budget}
+
+        with httpx.Client(timeout=300) as client:
+            r = client.post(url, headers=headers, json=body)
+            r.raise_for_status()
+            resp = r.json()
+
+        content = resp.get('content', [])
+        has_tool_use = any(b.get('type') == 'tool_use' for b in content)
+
+        if not has_tool_use:
+            text_parts = [b['text'] for b in content if b.get('type') == 'text']
+            return {
+                'content': [{"type": "text", "text": '\n'.join(text_parts)}],
+                'stop_reason': resp.get('stop_reason', 'end_turn'),
+                'tool_results': tool_results_all,
+            }
+
+        # Execute tool calls
+        tool_use_results = []
+        for block in content:
+            if block.get('type') == 'tool_use':
+                tool_name = block['name']
+                tool_input = block['input']
+                tool_id = block['id']
+
+                logger.info(f"Tool call: {tool_name}({json.dumps(tool_input)[:200]})")
+                result = execute_tool(tool_name, tool_input)
+                tool_results_all.append({"tool": tool_name, "input": tool_input, "result": result})
+
+                tool_use_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": str(result),
+                })
+
+        anthropic_messages.append({"role": "assistant", "content": content})
+        anthropic_messages.append({"role": "user", "content": tool_use_results})
+
+    return {
+        'content': [{"type": "text", "text": "I performed several actions but reached the maximum number of steps."}],
+        'stop_reason': 'max_loops',
+        'tool_results': tool_results_all,
     }
 
 
