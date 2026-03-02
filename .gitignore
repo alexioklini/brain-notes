@@ -9,3 +9,8 @@ __pycache__/
 # LLM config (contains API keys)
 llm_config.json
 .env
+
+.venv/
+agent-workspace/
+.venv/
+agent-workspace/

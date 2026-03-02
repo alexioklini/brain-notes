@@ -437,6 +437,21 @@ a{color:var(--cyan);text-decoration:none}
       <h1><i data-lucide="brain"></i> Brain Notes</h1>
       <button class="sb-btn" onclick="toggleSidebar()" title="Collapse"><i data-lucide="panel-left"></i></button>
     </div>
+    <!-- User Info -->
+    <div id="user-bar" style="padding:4px 12px 8px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);margin-bottom:4px">
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--cyan);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#000;flex-shrink:0" id="user-avatar">?</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="user-display-name"></div>
+        <div style="font-size:10px;color:var(--text3)" id="user-role-badge"></div>
+      </div>
+      <button onclick="showUserMenu()" class="sb-btn" title="Account" style="padding:2px"><i data-lucide="more-horizontal" style="width:14px;height:14px"></i></button>
+    </div>
+    <!-- Context Switcher (Personal / Teams) -->
+    <div id="context-switcher" style="padding:4px 12px 6px">
+      <select id="context-select" onchange="switchContext(this.value)" style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;font-family:inherit;cursor:pointer">
+        <option value="personal">📝 My Notes</option>
+      </select>
+    </div>
     <div class="sb-search">
       <i data-lucide="search"></i>
       <input type="text" placeholder="Search..." onkeydown="if(event.key==='Enter')openSearch(this.value)" onfocus="openSearch()">
@@ -765,9 +780,9 @@ let searchIdx = -1;
 let dialogCb = null;
 
 const api = (path, opts={}) => fetch('/api'+path, {
-  headers:{'Content-Type':'application/json'}, ...opts,
+  headers:{'Content-Type':'application/json'}, credentials:'include', ...opts,
   body: opts.body ? JSON.stringify(opts.body) : undefined
-}).then(r=>r.json());
+}).then(r => { if(r.status === 401) { window.location.href='/login'; return {}; } return r.json(); });
 
 const ICON_CATEGORIES = {
   'Documents': ['file-text','file','file-check','file-plus','file-minus','file-search','files','clipboard','clipboard-list','clipboard-check','notebook','book-open','book','bookmark','scroll'],
@@ -831,6 +846,7 @@ const BLOCK_TYPES = [
 // ── Init ──
 (async function boot(){
   try {
+    await initAuth();
     await refreshPages();
     setupKeys();
     lucide.createIcons();
@@ -839,9 +855,13 @@ const BLOCK_TYPES = [
 
 // ── Pages ──
 async function refreshPages(){
-  pages = await api('/pages');
+  const ownerParam = currentContext !== 'personal' ? '&owner=' + currentContext : '';
+  pages = await api('/pages?workspace=docs' + ownerParam);
   renderSidebar();
 }
+function loadPageList(){ refreshPages(); }
+function loadProjectList(){ if(currentWorkspace === 'projects') loadDatabases('projects'); }
+function loadWikiList(){ if(currentWorkspace === 'wiki') loadDatabases('wiki'); }
 
 function renderSidebar(){
   const roots = pages.filter(p => !p.parent_id);
@@ -892,7 +912,12 @@ function toggleChildren(el){
 }
 
 async function createPage(parentId){
-  const page = await api('/pages', {method:'POST', body:{title:'Untitled', parent_id:parentId||null, icon:'📝'}});
+  const body = {title:'Untitled', parent_id:parentId||null, icon:'📝'};
+  if(currentContext !== 'personal'){
+    body.owner_id = currentContext;
+    body.owner_type = 'team';
+  }
+  const page = await api('/pages', {method:'POST', body});
   await refreshPages();
   await loadPage(page.id);
 }
@@ -1808,7 +1833,12 @@ async function loadDatabases(workspace){
 async function createDatabase(workspace){
   const title = workspace === 'projects' ? 'New Project' : 'New Knowledge Base';
   const icon = workspace === 'projects' ? 'layout-grid' : 'book-open';
-  const db = await api('/databases', {method:'POST', body:{title, icon, workspace}});
+  const body = {title, icon, workspace};
+  if(currentContext !== 'personal'){
+    body.owner_id = currentContext;
+    body.owner_type = 'team';
+  }
+  const db = await api('/databases', {method:'POST', body});
   await loadDatabases(workspace);
   await loadDatabase(db.id);
 }
@@ -2565,8 +2595,7 @@ async function aiInline(action, language){
   toolbar.querySelector('button').aiCtrl = inlineController;
   
   try {
-    const res = await fetch('/api/ai/inline', {
-      method: 'POST',
+    const res = await fetch('/api/ai/inline', {credentials:'include', method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({text: aiSelectedText, action, language: language || 'English'}),
       signal: inlineController.signal
@@ -2673,8 +2702,7 @@ async function executeTranslate(){
     await aiInline('translate', lang);
   } else if(translateMode === 'page' && currentPage){
     // Translate entire page
-    const res = await fetch('/api/ai/translate-page', {
-      method: 'POST',
+    const res = await fetch('/api/ai/translate-page', {credentials:'include', method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({page_id: currentPage.id, language: lang})
     });
@@ -2692,8 +2720,7 @@ function showAiPrompt(){
   if(prompt){
     aiInline('custom');
     // Override with custom — need to pass prompt via API
-    fetch('/api/ai/inline', {
-      method: 'POST',
+    fetch('/api/ai/inline', {credentials:'include', method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({text: aiSelectedText, action: 'custom', prompt})
     }).then(r => r.json()).then(data => {
@@ -2732,8 +2759,7 @@ async function aiBlockCommand(action){
     const prompt = window.prompt('What should AI write?');
     if(!prompt) return;
     action = 'custom';
-    const res = await fetch('/api/ai/block', {
-      method: 'POST',
+    const res = await fetch('/api/ai/block', {credentials:'include', method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({action:'custom', page_id: currentPage.id, prompt})
     });
@@ -2745,8 +2771,7 @@ async function aiBlockCommand(action){
   // Standard AI block actions — use selected blocks as context if available
   const cleanAction = action.replace('ai_','');
   const selContent = selectedBlockIds.length > 1 ? getSelectedContent() : '';
-  const res = await fetch('/api/ai/block', {
-    method: 'POST',
+  const res = await fetch('/api/ai/block', {credentials:'include', method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({action: cleanAction, page_id: currentPage.id, selected_text: selContent})
   });
@@ -2840,8 +2865,7 @@ async function researchAiRefine(action){
   
   try {
     // Refine prompt
-    const res = await fetch('/api/ai/inline', {
-      method: 'POST',
+    const res = await fetch('/api/ai/inline', {credentials:'include', method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({text, action: 'custom', prompt: prompts[action]})
     });
@@ -2851,8 +2875,7 @@ async function researchAiRefine(action){
     // Auto-generate title from refined prompt if title is empty or action changes content
     const newText = data.result || text;
     if(!titleInput.value.trim() || action !== 'translate'){
-      const titleRes = await fetch('/api/ai/inline', {
-        method: 'POST',
+      const titleRes = await fetch('/api/ai/inline', {credentials:'include', method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({text: newText, action: 'custom', prompt: 'Generate a very short title (3-6 words) for this research topic. Return ONLY the title, no quotes, no explanation.'})
       });
@@ -2906,8 +2929,7 @@ async function submitResearch(){
   
   try {
     const timer = setTimeout(() => researchController.abort(), 290000);
-    const res = await fetch('/api/ai/research', {
-      method: 'POST',
+    const res = await fetch('/api/ai/research', {credentials:'include', method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({topic, title}),
       signal: researchController.signal
@@ -3060,8 +3082,7 @@ async function sendChat(){
   document.getElementById('chat-send-btn').disabled = true;
   
   try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
+    const res = await fetch('/api/chat', {credentials:'include', method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({message: msg, session_id: chatSessionId})
     });
@@ -3152,8 +3173,7 @@ function renderMarkdown(text){
 }
 
 async function clearChat(){
-  await fetch('/api/chat/clear', {
-    method: 'POST',
+  await fetch('/api/chat/clear', {credentials:'include', method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({session_id: chatSessionId})
   });
@@ -3167,16 +3187,14 @@ async function clearChat(){
 }
 
 async function updateChatModel(model){
-  await fetch('/api/chat/config', {
-    method: 'PUT',
+  await fetch('/api/chat/config', {credentials:'include', method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({model})
   });
 }
 
 async function updateThinking(thinking){
-  await fetch('/api/chat/config', {
-    method: 'PUT',
+  await fetch('/api/chat/config', {credentials:'include', method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({thinking})
   });
@@ -3194,11 +3212,269 @@ document.addEventListener('keydown', e => {
 function esc(s){if(!s)return '';const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 function renderContent(s){if(!s)return '';if(/<[a-z][\s\S]*>/i.test(s))return s;return esc(s);}
 
+// ── Auth & User ───────────────────────────────────────────────────────────
+
+let currentUser = null;
+let currentContext = 'personal'; // 'personal' or team id
+let userTeams = [];
+
+async function initAuth(){
+  try {
+    const r = await fetch('/api/auth/me', {credentials: 'include'});
+    if(!r.ok){ window.location.href = '/login'; return; }
+    currentUser = await r.json();
+    document.getElementById('user-display-name').textContent = currentUser.display_name || currentUser.username;
+    document.getElementById('user-role-badge').textContent = currentUser.role === 'admin' ? '⚡ Admin' : '👤 User';
+    document.getElementById('user-avatar').textContent = (currentUser.display_name || currentUser.username)[0].toUpperCase();
+    await loadTeams();
+  } catch(e){ window.location.href = '/login'; }
+}
+
+async function loadTeams(){
+  try {
+    const r = await fetch('/api/teams', {credentials: 'include'});
+    if(r.ok) userTeams = await r.json();
+  } catch(e){}
+  const sel = document.getElementById('context-select');
+  sel.innerHTML = '<option value="personal">📝 My Notes</option>';
+  for(const t of userTeams){
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = '👥 ' + t.name;
+    sel.appendChild(opt);
+  }
+}
+
+function switchContext(ctx){
+  currentContext = ctx;
+  // Reload content for new context
+  loadPageList();
+  loadProjectList();
+  loadWikiList();
+}
+
+function showUserMenu(){
+  const items = [
+    {label: '🔑 Change Password', action: () => promptChangePassword()},
+    ...(currentUser?.role === 'admin' ? [{label: '⚙️ Admin Panel', action: () => openAdminPanel()}] : []),
+    {label: '🚪 Logout', action: doLogout},
+  ];
+  // Simple dropdown
+  let menu = document.getElementById('user-menu-dropdown');
+  if(menu){ menu.remove(); return; }
+  menu = document.createElement('div');
+  menu.id = 'user-menu-dropdown';
+  menu.style.cssText = 'position:fixed;z-index:300;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.4)';
+  const bar = document.getElementById('user-bar');
+  const rect = bar.getBoundingClientRect();
+  menu.style.left = rect.left + 'px';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  for(const item of items){
+    const btn = document.createElement('button');
+    btn.textContent = item.label;
+    btn.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit';
+    btn.onmouseenter = () => btn.style.background = 'var(--card-hover)';
+    btn.onmouseleave = () => btn.style.background = 'none';
+    btn.onclick = () => { menu.remove(); item.action(); };
+    menu.appendChild(btn);
+  }
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', function rm(){ menu.remove(); document.removeEventListener('click', rm); }), 10);
+}
+
+async function doLogout(){
+  await fetch('/api/auth/logout', {credentials:'include', method:'POST', credentials:'include'});
+  window.location.href = '/login';
+}
+
+async function promptChangePassword(){
+  const old_password = prompt('Current password:');
+  if(!old_password) return;
+  const new_password = prompt('New password (min 4 chars):');
+  if(!new_password) return;
+  const r = await fetch('/api/auth/password', {credentials:'include', method:'PUT', credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({old_password, new_password})
+  });
+  const data = await r.json();
+  alert(r.ok ? 'Password changed ✅' : data.error || 'Failed');
+}
+
+// ── Admin Panel ───────────────────────────────────────────────────────────
+
+async function openAdminPanel(){
+  let modal = document.getElementById('admin-modal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'admin-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center';
+    modal.onclick = e => { if(e.target === modal) modal.style.display = 'none'; };
+    modal.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:720px;max-width:95vw;max-height:85vh;overflow-y:auto;padding:0">
+        <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--bg2);z-index:1;border-radius:12px 12px 0 0">
+          <h2 style="font-size:16px;font-weight:600">⚡ Admin Panel</h2>
+          <div style="display:flex;gap:4px">
+            <button class="admin-tab-btn active" onclick="adminTab('users')">Users</button>
+            <button class="admin-tab-btn" onclick="adminTab('teams')">Teams</button>
+            <button onclick="document.getElementById('admin-modal').style.display='none'" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;margin-left:12px">✕</button>
+          </div>
+        </div>
+        <div id="admin-content" style="padding:20px 24px"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    // Tab button styles
+    const style = document.createElement('style');
+    style.textContent = '.admin-tab-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:4px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}.admin-tab-btn.active{background:var(--cyan);color:#000;border-color:var(--cyan)}';
+    document.head.appendChild(style);
+  }
+  modal.style.display = 'flex';
+  adminTab('users');
+}
+
+async function adminTab(tab){
+  document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === tab));
+  const content = document.getElementById('admin-content');
+  if(tab === 'users') await renderAdminUsers(content);
+  else if(tab === 'teams') await renderAdminTeams(content);
+}
+
+async function renderAdminUsers(el){
+  const r = await fetch('/api/admin/users', {credentials:'include'});
+  const users = await r.json();
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-size:13px;color:var(--text3)">${users.length} users</span>
+      <button onclick="adminAddUser()" style="background:var(--cyan);color:#000;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">+ Add User</button>
+    </div>
+    <div id="admin-users-list">${users.map(u => `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--bg3);border-radius:8px;margin-bottom:6px">
+        <div style="width:32px;height:32px;border-radius:50%;background:${u.role==='admin'?'var(--cyan)':'var(--purple)'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#000;flex-shrink:0">${(u.display_name||u.username)[0].toUpperCase()}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:500">${esc(u.display_name || u.username)} <span style="font-size:11px;color:var(--text3)">@${esc(u.username)}</span></div>
+          <div style="font-size:11px;color:var(--text3)">${u.role === 'admin' ? '⚡ Admin' : '👤 User'}${u.email ? ' · '+esc(u.email) : ''}</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button onclick="adminEditUser('${u.id}')" style="background:none;border:1px solid var(--border);color:var(--text2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">Edit</button>
+          ${u.id !== currentUser.id ? `<button onclick="adminDeleteUser('${u.id}','${esc(u.username)}')" style="background:none;border:1px solid rgba(255,82,82,.3);color:var(--red);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>` : ''}
+        </div>
+      </div>
+    `).join('')}</div>
+  `;
+}
+
+async function adminAddUser(){
+  const username = prompt('Username:');
+  if(!username) return;
+  const password = prompt('Password:');
+  if(!password) return;
+  const display_name = prompt('Display Name:', username) || username;
+  const role = confirm('Make admin?') ? 'admin' : 'user';
+  const r = await fetch('/api/admin/users', {credentials:'include', method:'POST', credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username, password, display_name, role})
+  });
+  if(!r.ok){ const d = await r.json(); alert(d.error); return; }
+  adminTab('users');
+}
+
+async function adminEditUser(id){
+  const r = await fetch('/api/admin/users', {credentials:'include'});
+  const users = await r.json();
+  const u = users.find(x => x.id === id);
+  if(!u) return;
+  const display_name = prompt('Display Name:', u.display_name);
+  if(display_name === null) return;
+  const email = prompt('Email:', u.email || '');
+  const role = confirm('Admin role?') ? 'admin' : 'user';
+  const newPw = prompt('New password (leave empty to keep):');
+  const body = {display_name, email, role};
+  if(newPw) body.password = newPw;
+  await fetch('/api/admin/users/' + id, {
+    method:'PUT', credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  adminTab('users');
+}
+
+async function adminDeleteUser(id, name){
+  if(!confirm(`Delete user "${name}"? Their content will remain.`)) return;
+  await fetch('/api/admin/users/' + id, {method:'DELETE', credentials:'include'});
+  adminTab('users');
+}
+
+async function renderAdminTeams(el){
+  const r = await fetch('/api/teams', {credentials:'include'});
+  const teams = await r.json();
+  const ur = await fetch('/api/admin/users', {credentials:'include'});
+  const allUsers = await ur.json();
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-size:13px;color:var(--text3)">${teams.length} teams</span>
+      <button onclick="adminAddTeam()" style="background:var(--cyan);color:#000;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">+ Create Team</button>
+    </div>
+    ${teams.map(t => `
+      <div style="background:var(--bg3);border-radius:8px;padding:14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:600;font-size:14px">👥 ${esc(t.name)}</div>
+          <button onclick="adminDeleteTeam('${t.id}','${esc(t.name)}')" style="background:none;border:1px solid rgba(255,82,82,.3);color:var(--red);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">Delete</button>
+        </div>
+        ${t.description ? `<div style="font-size:12px;color:var(--text3);margin-bottom:8px">${esc(t.description)}</div>` : ''}
+        <div style="font-size:12px;margin-bottom:6px">Members:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${(t.members||[]).map(m => `
+          <span style="background:var(--bg);padding:3px 8px;border-radius:4px;font-size:11px;display:flex;align-items:center;gap:4px">
+            ${esc(m.display_name || m.username)} <span style="color:var(--text3)">(${m.role})</span>
+            ${m.role !== 'owner' ? `<button onclick="adminRemoveTeamMember('${t.id}','${m.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:10px;padding:0 2px">✕</button>` : ''}
+          </span>
+        `).join('')}</div>
+        <select onchange="if(this.value)adminAddTeamMember('${t.id}',this.value);this.value=''" style="background:var(--bg);border:1px solid var(--border);color:var(--text2);padding:4px 8px;border-radius:4px;font-size:11px;font-family:inherit">
+          <option value="">+ Add member...</option>
+          ${allUsers.filter(u => !(t.members||[]).find(m => m.id === u.id)).map(u => `<option value="${u.id}">${esc(u.display_name || u.username)}</option>`).join('')}
+        </select>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function adminAddTeam(){
+  const name = prompt('Team name:');
+  if(!name) return;
+  const description = prompt('Description (optional):') || '';
+  await fetch('/api/teams', {credentials:'include', method:'POST', credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name, description})
+  });
+  adminTab('teams');
+  await loadTeams();
+}
+
+async function adminDeleteTeam(id, name){
+  if(!confirm(`Delete team "${name}"?`)) return;
+  await fetch('/api/teams/' + id, {method:'DELETE', credentials:'include'});
+  adminTab('teams');
+  await loadTeams();
+}
+
+async function adminAddTeamMember(teamId, userId){
+  await fetch('/api/teams/' + teamId + '/members', {
+    method:'POST', credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({user_id: userId, role: 'member'})
+  });
+  adminTab('teams');
+}
+
+async function adminRemoveTeamMember(teamId, userId){
+  await fetch('/api/teams/' + teamId + '/members/' + userId, {method:'DELETE', credentials:'include'});
+  adminTab('teams');
+}
+
 // ── LLM Settings ──────────────────────────────────────────────────────────
 
 async function populateModelDropdown(){
   try {
-    const r = await fetch('/api/chat/config');
+    const r = await fetch('/api/chat/config', {credentials: 'include'});
     const config = await r.json();
     const sel = document.getElementById('chat-model');
     const models = config.available_models || [];
@@ -3246,7 +3522,7 @@ function closeLLMSettings(){
 }
 
 async function loadLLMConfig(){
-  const r = await fetch('/api/llm/config');
+  const r = await fetch('/api/llm/config', {credentials: 'include'});
   const config = await r.json();
 
   // Populate defaults
@@ -3311,8 +3587,7 @@ async function saveLLMDefaults(){
   const default_model = document.getElementById('llm-default-model').value;
   const default_thinking = document.getElementById('llm-default-thinking').value;
   const max_tokens = parseInt(document.getElementById('llm-max-tokens').value) || 4096;
-  await fetch('/api/llm/config', {
-    method: 'PUT',
+  await fetch('/api/llm/config', {credentials:'include', method: 'PUT',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({default_model, default_thinking, max_tokens})
   });
@@ -3333,7 +3608,7 @@ function showAddProvider(){
 }
 
 async function editProvider(id){
-  const r = await fetch('/api/llm/config');
+  const r = await fetch('/api/llm/config', {credentials: 'include'});
   const config = await r.json();
   const prov = (config.providers || []).find(p => p.id === id);
   if(!prov) return;
@@ -3390,7 +3665,7 @@ async function saveProvider(){
 
 async function deleteProvider(id){
   if(!confirm(`Delete provider "${id}"?`)) return;
-  await fetch('/api/llm/providers/' + encodeURIComponent(id), {method:'DELETE'});
+  await fetch('/api/llm/providers/' + encodeURIComponent(id), {method:'DELETE', credentials:'include'});
   await loadLLMConfig();
   lucide.createIcons();
 }
@@ -3406,8 +3681,7 @@ async function testProvider(){
   res.style.color = 'var(--text3)';
   res.textContent = '⏳ Testing connection...';
   try {
-    const r = await fetch('/api/llm/test', {
-      method: 'POST',
+    const r = await fetch('/api/llm/test', {credentials:'include', method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({base_url, api_key, model, api_type})
     });

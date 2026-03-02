@@ -1,12 +1,14 @@
 #!/usr/bin/env python3.12
 """Brain Notes — Notion Clone Backend with Docs, Projects, Knowledge Base"""
-import json, logging, os, sqlite3, uuid
+import json, logging, os, sqlite3, uuid, functools, secrets
 from datetime import datetime, date
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__, static_folder='static', static_url_path='')
-CORS(app)
+app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+CORS(app, supports_credentials=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -104,16 +106,86 @@ def init_db():
             CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
                 id, content, content='blocks', content_rowid=rowid
             );
+
+            -- Users
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE DEFAULT '',
+                password_hash TEXT NOT NULL,
+                display_name TEXT DEFAULT '',
+                role TEXT DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Teams
+            CREATE TABLE IF NOT EXISTS teams (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                created_by TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            );
+
+            -- Team members
+            CREATE TABLE IF NOT EXISTS team_members (
+                team_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                role TEXT DEFAULT 'member',
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (team_id, user_id),
+                FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            -- Permissions (granular sharing)
+            CREATE TABLE IF NOT EXISTS permissions (
+                id TEXT PRIMARY KEY,
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                grantee_type TEXT NOT NULL,
+                grantee_id TEXT NOT NULL,
+                permission TEXT NOT NULL,
+                granted_by TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (granted_by) REFERENCES users(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_perm_resource ON permissions(resource_type, resource_id);
+            CREATE INDEX IF NOT EXISTS idx_perm_grantee ON permissions(grantee_type, grantee_id);
         """)
-        # Add workspace column if missing (migration)
+        # Migrations
         try:
             conn.execute("SELECT workspace FROM pages LIMIT 1")
         except sqlite3.OperationalError:
             conn.execute("ALTER TABLE pages ADD COLUMN workspace TEXT DEFAULT 'docs'")
+        # Add owner columns to pages and databases
+        for table in ('pages', 'databases'):
+            try:
+                conn.execute(f"SELECT owner_id FROM {table} LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN owner_id TEXT DEFAULT ''")
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN owner_type TEXT DEFAULT 'user'")
+        # Add owner to chat_messages
+        try:
+            conn.execute("SELECT user_id FROM chat_messages LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN user_id TEXT DEFAULT ''")
         conn.commit()
+        # Create default admin if no users exist
+        admin = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
+        if not admin:
+            admin_id = gen_id()
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash, display_name, role) VALUES (?,?,?,?,?,?)",
+                (admin_id, 'admin', '', generate_password_hash('admin'), 'Admin', 'admin')
+            )
+            # Assign existing content to admin
+            conn.execute("UPDATE pages SET owner_id=?, owner_type='user' WHERE owner_id=''", (admin_id,))
+            conn.execute("UPDATE databases SET owner_id=?, owner_type='user' WHERE owner_id=''", (admin_id,))
+            conn.commit()
+            logger.info(f"Created default admin user (username: admin, password: admin)")
     logger.info("Database initialized")
-
-init_db()
 
 def dict_row(row):
     if row is None: return None
@@ -125,28 +197,458 @@ def now():
 def gen_id():
     return str(uuid.uuid4())[:8]
 
+init_db()
+
+# ── Auth ───────────────────────────────────────────────────────────────────
+
+def get_current_user():
+    """Get the current logged-in user from session. Returns dict or None."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+    with get_db() as conn:
+        row = conn.execute("SELECT id, username, email, display_name, role FROM users WHERE id=?", (user_id,)).fetchone()
+    return dict_row(row)
+
+def login_required(f):
+    """Decorator: require authentication. Sets g.user."""
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Authentication required'}), 401
+        g.user = user
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    """Decorator: require admin role."""
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Authentication required'}), 401
+        if user['role'] != 'admin':
+            return jsonify({'error': 'Admin access required'}), 403
+        g.user = user
+        return f(*args, **kwargs)
+    return decorated
+
+def get_user_team_ids(user_id):
+    """Get list of team IDs a user belongs to."""
+    with get_db() as conn:
+        rows = conn.execute("SELECT team_id FROM team_members WHERE user_id=?", (user_id,)).fetchall()
+    return [r['team_id'] for r in rows]
+
+def can_access_resource(user, resource_type, resource_id, required_permission='read'):
+    """Check if a user can access a resource. Admins can access everything."""
+    if user['role'] == 'admin':
+        return True
+    with get_db() as conn:
+        # Check ownership
+        table = 'pages' if resource_type == 'page' else 'databases'
+        row = conn.execute(f"SELECT owner_id, owner_type FROM {table} WHERE id=?", (resource_id,)).fetchone()
+        if not row:
+            return False
+        owner_id, owner_type = row['owner_id'], row['owner_type']
+        # User owns it directly
+        if owner_type == 'user' and owner_id == user['id']:
+            return True
+        # User is in the owning team
+        if owner_type == 'team':
+            member = conn.execute(
+                "SELECT role FROM team_members WHERE team_id=? AND user_id=?",
+                (owner_id, user['id'])
+            ).fetchone()
+            if member:
+                # Team owners/admins get full access, members get read+write
+                if member['role'] in ('owner', 'admin'):
+                    return True
+                if required_permission in ('read', 'write'):
+                    return True
+        # Check explicit permissions
+        perm_levels = {'read': ['read', 'write', 'delete'], 'write': ['write', 'delete'], 'delete': ['delete']}
+        valid_perms = perm_levels.get(required_permission, [required_permission])
+        placeholders = ','.join('?' * len(valid_perms))
+        # Direct user permission
+        perm = conn.execute(
+            f"SELECT id FROM permissions WHERE resource_type=? AND resource_id=? "
+            f"AND grantee_type='user' AND grantee_id=? AND permission IN ({placeholders})",
+            (resource_type, resource_id, user['id'], *valid_perms)
+        ).fetchone()
+        if perm:
+            return True
+        # Team-based permission
+        team_ids = get_user_team_ids(user['id'])
+        for tid in team_ids:
+            perm = conn.execute(
+                f"SELECT id FROM permissions WHERE resource_type=? AND resource_id=? "
+                f"AND grantee_type='team' AND grantee_id=? AND permission IN ({placeholders})",
+                (resource_type, resource_id, tid, *valid_perms)
+            ).fetchone()
+            if perm:
+                return True
+    return False
+
+def get_accessible_filter(user, table='pages'):
+    """Return (WHERE clause, params) for filtering resources a user can access."""
+    if user['role'] == 'admin':
+        return "1=1", []
+    resource_type = 'page' if table == 'pages' else 'database'
+    team_ids = get_user_team_ids(user['id'])
+    conditions = [f"({table}.owner_type='user' AND {table}.owner_id=?)"]
+    params = [user['id']]
+    for tid in team_ids:
+        conditions.append(f"({table}.owner_type='team' AND {table}.owner_id=?)")
+        params.append(tid)
+    # Include resources with explicit read+ permission
+    conditions.append(
+        f"({table}.id IN (SELECT resource_id FROM permissions WHERE resource_type=? "
+        f"AND grantee_type='user' AND grantee_id=? AND permission IN ('read','write','delete')))"
+    )
+    params.extend([resource_type, user['id']])
+    for tid in team_ids:
+        conditions.append(
+            f"({table}.id IN (SELECT resource_id FROM permissions WHERE resource_type=? "
+            f"AND grantee_type='team' AND grantee_id=? AND permission IN ('read','write','delete')))"
+        )
+        params.extend([resource_type, tid])
+    return " OR ".join(conditions), params
+
+# ── Auth Routes ────────────────────────────────────────────────────────────
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.get_json(force=True)
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    with get_db() as conn:
+        user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'Invalid credentials'}), 401
+    session['user_id'] = user['id']
+    session.permanent = True
+    return jsonify({'id': user['id'], 'username': user['username'], 'display_name': user['display_name'], 'role': user['role']})
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'ok': True})
+
+@app.route('/api/auth/me', methods=['GET'])
+def auth_me():
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'Not authenticated'}), 401
+    return jsonify(user)
+
+@app.route('/api/auth/password', methods=['PUT'])
+@login_required
+def change_password():
+    data = request.get_json(force=True)
+    old_pw = data.get('old_password', '')
+    new_pw = data.get('new_password', '')
+    if len(new_pw) < 4:
+        return jsonify({'error': 'Password too short (min 4)'}), 400
+    with get_db() as conn:
+        user = conn.execute("SELECT password_hash FROM users WHERE id=?", (g.user['id'],)).fetchone()
+        if not check_password_hash(user['password_hash'], old_pw):
+            return jsonify({'error': 'Wrong current password'}), 401
+        conn.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(new_pw), g.user['id']))
+        conn.commit()
+    return jsonify({'ok': True})
+
+# ── Admin: User Management ─────────────────────────────────────────────────
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def admin_list_users():
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, username, email, display_name, role, created_at FROM users ORDER BY created_at").fetchall()
+    return jsonify([dict_row(r) for r in rows])
+
+@app.route('/api/admin/users', methods=['POST'])
+@admin_required
+def admin_create_user():
+    data = request.get_json(force=True)
+    username = data.get('username', '').strip().lower()
+    password = data.get('password', '')
+    if not username or not password:
+        return jsonify({'error': 'username and password required'}), 400
+    user_id = gen_id()
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash, display_name, role) VALUES (?,?,?,?,?,?)",
+                (user_id, username, data.get('email', ''), generate_password_hash(password),
+                 data.get('display_name', username), data.get('role', 'user'))
+            )
+            conn.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Username already exists'}), 409
+    return jsonify({'id': user_id, 'username': username}), 201
+
+@app.route('/api/admin/users/<user_id>', methods=['PUT'])
+@admin_required
+def admin_update_user(user_id):
+    data = request.get_json(force=True)
+    with get_db() as conn:
+        user = conn.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        if 'display_name' in data:
+            conn.execute("UPDATE users SET display_name=? WHERE id=?", (data['display_name'], user_id))
+        if 'email' in data:
+            conn.execute("UPDATE users SET email=? WHERE id=?", (data['email'], user_id))
+        if 'role' in data and data['role'] in ('admin', 'user'):
+            conn.execute("UPDATE users SET role=? WHERE id=?", (data['role'], user_id))
+        if 'password' in data and data['password']:
+            conn.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(data['password']), user_id))
+        conn.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/admin/users/<user_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_user(user_id):
+    if user_id == g.user['id']:
+        return jsonify({'error': 'Cannot delete yourself'}), 400
+    with get_db() as conn:
+        conn.execute("DELETE FROM team_members WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM permissions WHERE granted_by=? OR (grantee_type='user' AND grantee_id=?)", (user_id, user_id))
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        conn.commit()
+    return jsonify({'ok': True})
+
+# ── Teams ──────────────────────────────────────────────────────────────────
+
+@app.route('/api/teams', methods=['GET'])
+@login_required
+def list_teams():
+    with get_db() as conn:
+        if g.user['role'] == 'admin':
+            rows = conn.execute("SELECT * FROM teams ORDER BY name").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT t.* FROM teams t JOIN team_members tm ON t.id=tm.team_id WHERE tm.user_id=? ORDER BY t.name",
+                (g.user['id'],)
+            ).fetchall()
+    teams = []
+    for r in rows:
+        t = dict_row(r)
+        with get_db() as conn:
+            members = conn.execute(
+                "SELECT u.id, u.username, u.display_name, tm.role FROM team_members tm "
+                "JOIN users u ON u.id=tm.user_id WHERE tm.team_id=?", (t['id'],)
+            ).fetchall()
+        t['members'] = [dict_row(m) for m in members]
+        teams.append(t)
+    return jsonify(teams)
+
+@app.route('/api/teams', methods=['POST'])
+@login_required
+def create_team():
+    data = request.get_json(force=True)
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Team name required'}), 400
+    team_id = gen_id()
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO teams (id, name, description, created_by) VALUES (?,?,?,?)",
+            (team_id, name, data.get('description', ''), g.user['id'])
+        )
+        conn.execute(
+            "INSERT INTO team_members (team_id, user_id, role) VALUES (?,?,?)",
+            (team_id, g.user['id'], 'owner')
+        )
+        conn.commit()
+    return jsonify({'id': team_id, 'name': name}), 201
+
+@app.route('/api/teams/<team_id>', methods=['PUT'])
+@login_required
+def update_team(team_id):
+    data = request.get_json(force=True)
+    with get_db() as conn:
+        # Check: must be team owner/admin or app admin
+        member = conn.execute(
+            "SELECT role FROM team_members WHERE team_id=? AND user_id=?", (team_id, g.user['id'])
+        ).fetchone()
+        if not member and g.user['role'] != 'admin':
+            return jsonify({'error': 'Not authorized'}), 403
+        if member and member['role'] not in ('owner', 'admin') and g.user['role'] != 'admin':
+            return jsonify({'error': 'Not authorized'}), 403
+        if 'name' in data:
+            conn.execute("UPDATE teams SET name=? WHERE id=?", (data['name'], team_id))
+        if 'description' in data:
+            conn.execute("UPDATE teams SET description=? WHERE id=?", (data['description'], team_id))
+        conn.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/teams/<team_id>', methods=['DELETE'])
+@login_required
+def delete_team(team_id):
+    with get_db() as conn:
+        member = conn.execute(
+            "SELECT role FROM team_members WHERE team_id=? AND user_id=?", (team_id, g.user['id'])
+        ).fetchone()
+        if (not member or member['role'] != 'owner') and g.user['role'] != 'admin':
+            return jsonify({'error': 'Only team owner or admin can delete'}), 403
+        conn.execute("DELETE FROM team_members WHERE team_id=?", (team_id,))
+        conn.execute("DELETE FROM permissions WHERE grantee_type='team' AND grantee_id=?", (team_id,))
+        conn.execute("DELETE FROM teams WHERE id=?", (team_id,))
+        conn.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/teams/<team_id>/members', methods=['POST'])
+@login_required
+def add_team_member(team_id):
+    data = request.get_json(force=True)
+    with get_db() as conn:
+        member = conn.execute(
+            "SELECT role FROM team_members WHERE team_id=? AND user_id=?", (team_id, g.user['id'])
+        ).fetchone()
+        if (not member or member['role'] not in ('owner', 'admin')) and g.user['role'] != 'admin':
+            return jsonify({'error': 'Not authorized'}), 403
+        user_id = data.get('user_id', '')
+        role = data.get('role', 'member')
+        if role not in ('member', 'admin'):
+            role = 'member'
+        try:
+            conn.execute(
+                "INSERT INTO team_members (team_id, user_id, role) VALUES (?,?,?)",
+                (team_id, user_id, role)
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            return jsonify({'error': 'Already a member or invalid user'}), 409
+    return jsonify({'ok': True}), 201
+
+@app.route('/api/teams/<team_id>/members/<user_id>', methods=['PUT'])
+@login_required
+def update_team_member(team_id, user_id):
+    data = request.get_json(force=True)
+    with get_db() as conn:
+        member = conn.execute(
+            "SELECT role FROM team_members WHERE team_id=? AND user_id=?", (team_id, g.user['id'])
+        ).fetchone()
+        if (not member or member['role'] not in ('owner', 'admin')) and g.user['role'] != 'admin':
+            return jsonify({'error': 'Not authorized'}), 403
+        role = data.get('role', 'member')
+        if role not in ('member', 'admin', 'owner'):
+            role = 'member'
+        conn.execute("UPDATE team_members SET role=? WHERE team_id=? AND user_id=?", (role, team_id, user_id))
+        conn.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/teams/<team_id>/members/<user_id>', methods=['DELETE'])
+@login_required
+def remove_team_member(team_id, user_id):
+    with get_db() as conn:
+        member = conn.execute(
+            "SELECT role FROM team_members WHERE team_id=? AND user_id=?", (team_id, g.user['id'])
+        ).fetchone()
+        if (not member or member['role'] not in ('owner', 'admin')) and g.user['role'] != 'admin':
+            return jsonify({'error': 'Not authorized'}), 403
+        conn.execute("DELETE FROM team_members WHERE team_id=? AND user_id=?", (team_id, user_id))
+        conn.commit()
+    return jsonify({'ok': True})
+
+# ── Permissions (Sharing) ──────────────────────────────────────────────────
+
+@app.route('/api/permissions/<resource_type>/<resource_id>', methods=['GET'])
+@login_required
+def get_permissions(resource_type, resource_id):
+    if resource_type not in ('page', 'database'):
+        return jsonify({'error': 'Invalid resource type'}), 400
+    if not can_access_resource(g.user, resource_type, resource_id, 'read'):
+        return jsonify({'error': 'Access denied'}), 403
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT p.*, u.username as granted_by_name FROM permissions p "
+            "LEFT JOIN users u ON u.id=p.granted_by "
+            "WHERE p.resource_type=? AND p.resource_id=?",
+            (resource_type, resource_id)
+        ).fetchall()
+    return jsonify([dict_row(r) for r in rows])
+
+@app.route('/api/permissions', methods=['POST'])
+@login_required
+def grant_permission():
+    data = request.get_json(force=True)
+    resource_type = data.get('resource_type', '')
+    resource_id = data.get('resource_id', '')
+    grantee_type = data.get('grantee_type', '')
+    grantee_id = data.get('grantee_id', '')
+    permission = data.get('permission', '')
+    if resource_type not in ('page', 'database') or grantee_type not in ('user', 'team') or permission not in ('read', 'write', 'delete'):
+        return jsonify({'error': 'Invalid parameters'}), 400
+    # Must own the resource or be admin
+    if not can_access_resource(g.user, resource_type, resource_id, 'delete'):
+        return jsonify({'error': 'Only owner can share'}), 403
+    perm_id = gen_id()
+    with get_db() as conn:
+        # Remove existing same-type permission first
+        conn.execute(
+            "DELETE FROM permissions WHERE resource_type=? AND resource_id=? AND grantee_type=? AND grantee_id=?",
+            (resource_type, resource_id, grantee_type, grantee_id)
+        )
+        conn.execute(
+            "INSERT INTO permissions (id, resource_type, resource_id, grantee_type, grantee_id, permission, granted_by) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (perm_id, resource_type, resource_id, grantee_type, grantee_id, permission, g.user['id'])
+        )
+        conn.commit()
+    return jsonify({'id': perm_id}), 201
+
+@app.route('/api/permissions/<perm_id>', methods=['DELETE'])
+@login_required
+def revoke_permission(perm_id):
+    with get_db() as conn:
+        perm = conn.execute("SELECT * FROM permissions WHERE id=?", (perm_id,)).fetchone()
+        if not perm:
+            return jsonify({'error': 'Not found'}), 404
+        # Must be owner of the resource or admin
+        if perm['granted_by'] != g.user['id'] and g.user['role'] != 'admin':
+            if not can_access_resource(g.user, perm['resource_type'], perm['resource_id'], 'delete'):
+                return jsonify({'error': 'Not authorized'}), 403
+        conn.execute("DELETE FROM permissions WHERE id=?", (perm_id,))
+        conn.commit()
+    return jsonify({'ok': True})
+
 # ── Pages ──────────────────────────────────────────────────────────────────
+
+@app.route('/login')
+def login_page():
+    return send_from_directory('static', 'login.html')
 
 @app.route('/')
 def index():
+    user = get_current_user()
+    if not user:
+        return send_from_directory('static', 'login.html')
     return send_from_directory('static', 'index.html')
 
 @app.route('/api/pages', methods=['GET'])
+@login_required
 def list_pages():
     workspace = request.args.get('workspace')
+    owner = request.args.get('owner')  # optional: filter by team id
+    access_filter, access_params = get_accessible_filter(g.user, 'pages')
     with get_db() as conn:
+        where = [f"({access_filter})"]
+        params = list(access_params)
         if workspace:
-            rows = conn.execute(
-                "SELECT * FROM pages WHERE workspace=? ORDER BY is_favorite DESC, sort_order ASC, updated_at DESC",
-                (workspace,)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM pages ORDER BY is_favorite DESC, sort_order ASC, updated_at DESC"
-            ).fetchall()
+            where.append("pages.workspace=?")
+            params.append(workspace)
+        if owner:
+            where.append("pages.owner_id=? AND pages.owner_type='team'")
+            params.append(owner)
+        sql = f"SELECT * FROM pages WHERE {' AND '.join(where)} ORDER BY is_favorite DESC, sort_order ASC, updated_at DESC"
+        rows = conn.execute(sql, params).fetchall()
     return jsonify([dict_row(r) for r in rows])
 
 @app.route('/api/pages', methods=['POST'])
+@login_required
 def create_page():
     data = request.get_json(force=True)
     page_id = data.get('id', gen_id())
@@ -154,6 +656,15 @@ def create_page():
     parent_id = data.get('parent_id')
     icon = data.get('icon', '')
     workspace = data.get('workspace', 'docs')
+    owner_id = data.get('owner_id', g.user['id'])
+    owner_type = data.get('owner_type', 'user')
+    # If creating in a team, verify membership
+    if owner_type == 'team':
+        team_ids = get_user_team_ids(g.user['id'])
+        if owner_id not in team_ids and g.user['role'] != 'admin':
+            return jsonify({'error': 'Not a member of this team'}), 403
+    else:
+        owner_id = g.user['id']
     
     with get_db() as conn:
         if parent_id:
@@ -167,8 +678,8 @@ def create_page():
             ).fetchone()[0]
         
         conn.execute(
-            "INSERT INTO pages (id, title, icon, parent_id, workspace, sort_order) VALUES (?,?,?,?,?,?)",
-            (page_id, title, icon, parent_id, workspace, max_order + 1)
+            "INSERT INTO pages (id, title, icon, parent_id, workspace, sort_order, owner_id, owner_type) VALUES (?,?,?,?,?,?,?,?)",
+            (page_id, title, icon, parent_id, workspace, max_order + 1, owner_id, owner_type)
         )
         block_id = gen_id()
         conn.execute(
@@ -180,7 +691,10 @@ def create_page():
     return jsonify(dict_row(row)), 201
 
 @app.route('/api/pages/<page_id>', methods=['GET'])
+@login_required
 def get_page(page_id):
+    if not can_access_resource(g.user, 'page', page_id, 'read'):
+        return jsonify({'error': 'Access denied'}), 403
     with get_db() as conn:
         page = conn.execute("SELECT * FROM pages WHERE id=?", (page_id,)).fetchone()
         if not page:
@@ -197,7 +711,10 @@ def get_page(page_id):
     return jsonify(result)
 
 @app.route('/api/pages/<page_id>', methods=['PUT'])
+@login_required
 def update_page(page_id):
+    if not can_access_resource(g.user, 'page', page_id, 'write'):
+        return jsonify({'error': 'Access denied'}), 403
     data = request.get_json(force=True)
     with get_db() as conn:
         page = conn.execute("SELECT * FROM pages WHERE id=?", (page_id,)).fetchone()
@@ -220,12 +737,16 @@ def update_page(page_id):
     return jsonify(dict_row(row))
 
 @app.route('/api/pages/<page_id>', methods=['DELETE'])
+@login_required
 def delete_page(page_id):
+    if not can_access_resource(g.user, 'page', page_id, 'delete'):
+        return jsonify({'error': 'Access denied'}), 403
     with get_db() as conn:
         children = conn.execute("SELECT id FROM pages WHERE parent_id=?", (page_id,)).fetchall()
         for child in children:
             delete_page_recursive(conn, child['id'])
         conn.execute("DELETE FROM blocks WHERE page_id=?", (page_id,))
+        conn.execute("DELETE FROM permissions WHERE resource_type='page' AND resource_id=?", (page_id,))
         conn.execute("DELETE FROM pages WHERE id=?", (page_id,))
         conn.commit()
     return jsonify({'ok': True})
@@ -235,9 +756,11 @@ def delete_page_recursive(conn, page_id):
     for child in children:
         delete_page_recursive(conn, child['id'])
     conn.execute("DELETE FROM blocks WHERE page_id=?", (page_id,))
+    conn.execute("DELETE FROM permissions WHERE resource_type='page' AND resource_id=?", (page_id,))
     conn.execute("DELETE FROM pages WHERE id=?", (page_id,))
 
 @app.route('/api/pages/reorder', methods=['PUT'])
+@login_required
 def reorder_pages():
     data = request.get_json(force=True)
     order = data.get('order', [])
@@ -250,6 +773,7 @@ def reorder_pages():
 # ── Blocks ─────────────────────────────────────────────────────────────────
 
 @app.route('/api/pages/<page_id>/blocks', methods=['GET'])
+@login_required
 def get_blocks(page_id):
     with get_db() as conn:
         rows = conn.execute(
@@ -258,6 +782,7 @@ def get_blocks(page_id):
     return jsonify([dict_row(r) for r in rows])
 
 @app.route('/api/pages/<page_id>/blocks', methods=['POST'])
+@login_required
 def create_block(page_id):
     data = request.get_json(force=True)
     block_id = data.get('id', gen_id())
@@ -295,6 +820,7 @@ def create_block(page_id):
     return jsonify(dict_row(row)), 201
 
 @app.route('/api/blocks/<block_id>', methods=['PUT'])
+@login_required
 def update_block(block_id):
     data = request.get_json(force=True)
     with get_db() as conn:
@@ -320,6 +846,7 @@ def update_block(block_id):
     return jsonify(dict_row(row))
 
 @app.route('/api/blocks/<block_id>', methods=['DELETE'])
+@login_required
 def delete_block(block_id):
     with get_db() as conn:
         block = conn.execute("SELECT * FROM blocks WHERE id=?", (block_id,)).fetchone()
@@ -330,6 +857,7 @@ def delete_block(block_id):
     return jsonify({'ok': True})
 
 @app.route('/api/pages/<page_id>/blocks/reorder', methods=['PUT'])
+@login_required
 def reorder_blocks(page_id):
     data = request.get_json(force=True)
     order = data.get('order', [])
@@ -343,16 +871,19 @@ def reorder_blocks(page_id):
 # ── Databases ──────────────────────────────────────────────────────────────
 
 @app.route('/api/databases', methods=['GET'])
+@login_required
 def list_databases():
     workspace = request.args.get('workspace')
+    access_filter, access_params = get_accessible_filter(g.user, 'databases')
     with get_db() as conn:
+        where = [f"({access_filter})"]
+        params = list(access_params)
         if workspace:
-            rows = conn.execute(
-                "SELECT * FROM databases WHERE workspace=? ORDER BY updated_at DESC",
-                (workspace,)
-            ).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM databases ORDER BY updated_at DESC").fetchall()
+            where.append("databases.workspace=?")
+            params.append(workspace)
+        rows = conn.execute(
+            f"SELECT * FROM databases WHERE {' AND '.join(where)} ORDER BY updated_at DESC", params
+        ).fetchall()
     result = []
     for r in rows:
         d = dict_row(r)
@@ -370,6 +901,7 @@ def list_databases():
     return jsonify(result)
 
 @app.route('/api/databases', methods=['POST'])
+@login_required
 def create_database():
     data = request.get_json(force=True)
     db_id = data.get('id', gen_id())
@@ -432,9 +964,17 @@ def create_database():
     schema = data.get('properties_schema', default_schema)
     
     with get_db() as conn:
+        owner_id = data.get('owner_id', g.user['id'])
+        owner_type = data.get('owner_type', 'user')
+        if owner_type == 'team':
+            team_ids = get_user_team_ids(g.user['id'])
+            if owner_id not in team_ids and g.user['role'] != 'admin':
+                return jsonify({'error': 'Not a member of this team'}), 403
+        else:
+            owner_id = g.user['id']
         conn.execute(
-            "INSERT INTO databases (id, title, icon, workspace, description, properties_schema, default_view) VALUES (?,?,?,?,?,?,?)",
-            (db_id, title, icon, workspace, description, json.dumps(schema), default_view)
+            "INSERT INTO databases (id, title, icon, workspace, description, properties_schema, default_view, owner_id, owner_type) VALUES (?,?,?,?,?,?,?,?,?)",
+            (db_id, title, icon, workspace, description, json.dumps(schema), default_view, owner_id, owner_type)
         )
         # Create default view
         view_id = gen_id()
@@ -452,7 +992,10 @@ def create_database():
     return jsonify(result), 201
 
 @app.route('/api/databases/<db_id>', methods=['GET'])
+@login_required
 def get_database(db_id):
+    if not can_access_resource(g.user, 'database', db_id, 'read'):
+        return jsonify({'error': 'Access denied'}), 403
     with get_db() as conn:
         db = conn.execute("SELECT * FROM databases WHERE id=?", (db_id,)).fetchone()
         if not db:
@@ -478,7 +1021,10 @@ def get_database(db_id):
     return jsonify(result)
 
 @app.route('/api/databases/<db_id>', methods=['PUT'])
+@login_required
 def update_database(db_id):
+    if not can_access_resource(g.user, 'database', db_id, 'write'):
+        return jsonify({'error': 'Access denied'}), 403
     data = request.get_json(force=True)
     with get_db() as conn:
         updates, params = [], []
@@ -501,7 +1047,10 @@ def update_database(db_id):
     return jsonify(result)
 
 @app.route('/api/databases/<db_id>', methods=['DELETE'])
+@login_required
 def delete_database(db_id):
+    if not can_access_resource(g.user, 'database', db_id, 'delete'):
+        return jsonify({'error': 'Access denied'}), 403
     with get_db() as conn:
         # Delete associated pages for items
         items = conn.execute("SELECT page_id FROM db_items WHERE database_id=? AND page_id IS NOT NULL", (db_id,)).fetchall()
@@ -518,6 +1067,7 @@ def delete_database(db_id):
 # ── Database Items ─────────────────────────────────────────────────────────
 
 @app.route('/api/databases/<db_id>/items', methods=['POST'])
+@login_required
 def create_db_item(db_id):
     data = request.get_json(force=True)
     item_id = data.get('id', gen_id())
@@ -554,6 +1104,7 @@ def create_db_item(db_id):
     return jsonify(result), 201
 
 @app.route('/api/databases/<db_id>/items/<item_id>', methods=['PUT'])
+@login_required
 def update_db_item(db_id, item_id):
     data = request.get_json(force=True)
     with get_db() as conn:
@@ -587,6 +1138,7 @@ def update_db_item(db_id, item_id):
     return jsonify(result)
 
 @app.route('/api/databases/<db_id>/items/<item_id>', methods=['DELETE'])
+@login_required
 def delete_db_item(db_id, item_id):
     with get_db() as conn:
         item = conn.execute("SELECT * FROM db_items WHERE id=?", (item_id,)).fetchone()
@@ -599,6 +1151,7 @@ def delete_db_item(db_id, item_id):
     return jsonify({'ok': True})
 
 @app.route('/api/databases/<db_id>/items/reorder', methods=['PUT'])
+@login_required
 def reorder_db_items(db_id):
     data = request.get_json(force=True)
     order = data.get('order', [])
@@ -1479,6 +2032,7 @@ def test_provider():
         return jsonify({'ok': False, 'error': str(e)}), 400
 
 @app.route('/api/chat', methods=['POST'])
+@login_required
 def chat():
     data = request.get_json(force=True)
     message = data.get('message', '').strip()
@@ -1617,6 +2171,7 @@ You can set title, icon, replace_blocks, and/or append_blocks. Use the page_id f
 
 
 @app.route('/api/chat/history', methods=['GET'])
+@login_required
 def get_chat_history():
     session_id = request.args.get('session_id', 'default')
     history = _load_chat_history(session_id)
@@ -1638,6 +2193,7 @@ def get_chat_history():
 
 
 @app.route('/api/chat/clear', methods=['POST'])
+@login_required
 def clear_chat():
     session_id = request.get_json(force=True).get('session_id', 'default')
     _clear_chat_history(session_id)
