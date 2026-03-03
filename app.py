@@ -645,6 +645,11 @@ def login_page():
 def index():
     user = get_current_user()
     if not user:
+        # Show landing page on notesai subdomain, login page otherwise
+        host = request.headers.get('X-Forwarded-Host', '') or request.headers.get('Host', '') or request.host
+        host = host.split(':')[0]
+        if 'notesai' in host:
+            return send_from_directory(app.static_folder, 'website.html')
         return send_from_directory('static', 'login.html')
     return send_from_directory('static', 'index.html')
 
