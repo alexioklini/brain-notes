@@ -89,6 +89,21 @@ def init_db():
                 FOREIGN KEY (database_id) REFERENCES databases(id) ON DELETE CASCADE
             );
 
+            -- Project resources (files/directories linked to projects)
+            CREATE TABLE IF NOT EXISTS project_resources (
+                id TEXT PRIMARY KEY,
+                database_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                resource_type TEXT NOT NULL DEFAULT 'directory',
+                qmd_collection TEXT DEFAULT '',
+                indexed_at TIMESTAMP DEFAULT NULL,
+                file_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (database_id) REFERENCES databases(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_res_db ON project_resources(database_id);
+
             CREATE TABLE IF NOT EXISTS chat_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL DEFAULT 'default',
@@ -1202,6 +1217,156 @@ def update_db_view(db_id, view_id):
     result = dict_row(row)
     result['config'] = json.loads(result['config']) if result['config'] else {}
     return jsonify(result)
+
+# ── Project Resources ──────────────────────────────────────────────────────
+
+@app.route('/api/databases/<db_id>/resources', methods=['GET'])
+def list_resources(db_id):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM project_resources WHERE database_id=? ORDER BY created_at DESC", (db_id,)
+        ).fetchall()
+    return jsonify([dict_row(r) for r in rows])
+
+@app.route('/api/databases/<db_id>/resources', methods=['POST'])
+def add_resource(db_id):
+    data = request.get_json(force=True)
+    path = data.get('path', '').strip()
+    name = data.get('name', '').strip()
+    if not path:
+        return jsonify({"error": "path is required"}), 400
+    
+    # Resolve path
+    expanded = os.path.expanduser(path)
+    if not os.path.exists(expanded):
+        return jsonify({"error": f"Path does not exist: {expanded}"}), 400
+    
+    res_type = 'directory' if os.path.isdir(expanded) else 'file'
+    if not name:
+        name = os.path.basename(expanded) or path
+    
+    res_id = gen_id()
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO project_resources (id, database_id, name, path, resource_type) VALUES (?,?,?,?,?)",
+            (res_id, db_id, name, expanded, res_type)
+        )
+        conn.commit()
+    
+    return jsonify({"id": res_id, "name": name, "path": expanded, "resource_type": res_type, "database_id": db_id})
+
+@app.route('/api/databases/<db_id>/resources/<res_id>', methods=['DELETE'])
+def delete_resource(db_id, res_id):
+    import subprocess
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM project_resources WHERE id=? AND database_id=?", (res_id, db_id)).fetchone()
+        if not row:
+            return jsonify({"error": "Resource not found"}), 404
+        # Remove QMD collection if indexed
+        if row['qmd_collection']:
+            try:
+                subprocess.run(['qmd', 'collection', 'remove', row['qmd_collection']], capture_output=True, timeout=10)
+            except Exception as e:
+                logger.warning(f"Failed to remove QMD collection {row['qmd_collection']}: {e}")
+        conn.execute("DELETE FROM project_resources WHERE id=?", (res_id,))
+        conn.commit()
+    return jsonify({"status": "deleted"})
+
+@app.route('/api/databases/<db_id>/resources/<res_id>/index', methods=['POST'])
+def index_resource(db_id, res_id):
+    import subprocess
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM project_resources WHERE id=? AND database_id=?", (res_id, db_id)).fetchone()
+        if not row:
+            return jsonify({"error": "Resource not found"}), 404
+        
+        path = row['path']
+        collection_name = f"notes-{db_id}-{res_id}"
+        
+        # Determine mask based on resource type
+        if row['resource_type'] == 'directory':
+            mask = "**/*"
+        else:
+            mask = os.path.basename(path)
+            path = os.path.dirname(path)
+        
+        # Remove old collection if exists
+        if row['qmd_collection']:
+            try:
+                subprocess.run(['qmd', 'collection', 'remove', row['qmd_collection']], capture_output=True, timeout=10)
+            except Exception:
+                pass
+        
+        # Create QMD collection
+        result = subprocess.run(
+            ['qmd', 'collection', 'add', path, '--name', collection_name, '--mask', mask],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode != 0:
+            return jsonify({"error": f"QMD indexing failed: {result.stderr}"}), 500
+        
+        # Embed
+        embed_result = subprocess.run(
+            ['qmd', 'embed'],
+            capture_output=True, text=True, timeout=120
+        )
+        
+        # Count files
+        ls_result = subprocess.run(
+            ['qmd', 'ls', collection_name, '--files'],
+            capture_output=True, text=True, timeout=10
+        )
+        file_count = len(ls_result.stdout.strip().split('\n')) if ls_result.stdout.strip() else 0
+        
+        # Update DB
+        conn.execute(
+            "UPDATE project_resources SET qmd_collection=?, indexed_at=?, file_count=? WHERE id=?",
+            (collection_name, datetime.now().isoformat(), file_count, res_id)
+        )
+        conn.commit()
+    
+    return jsonify({
+        "status": "indexed",
+        "collection": collection_name,
+        "file_count": file_count,
+        "output": result.stdout[:500]
+    })
+
+@app.route('/api/databases/<db_id>/resources/search', methods=['GET'])
+def search_resources(db_id):
+    import subprocess
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify([])
+    
+    with get_db() as conn:
+        resources = conn.execute(
+            "SELECT * FROM project_resources WHERE database_id=? AND qmd_collection IS NOT NULL AND qmd_collection != ''",
+            (db_id,)
+        ).fetchall()
+    
+    if not resources:
+        return jsonify({"results": [], "message": "No indexed resources"})
+    
+    all_results = []
+    for res in resources:
+        try:
+            result = subprocess.run(
+                ['qmd', 'query', q, '-c', res['qmd_collection'], '-n', '5', '--json'],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                hits = json.loads(result.stdout)
+                for hit in hits:
+                    hit['resource_name'] = res['name']
+                    hit['resource_id'] = res['id']
+                all_results.extend(hits)
+        except Exception as e:
+            logger.warning(f"QMD search failed for {res['qmd_collection']}: {e}")
+    
+    # Sort by score descending
+    all_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+    return jsonify({"results": all_results[:20]})
 
 # ── Search ─────────────────────────────────────────────────────────────────
 

@@ -27,6 +27,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.15)}
 a{color:var(--cyan);text-decoration:none}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
 /* ═══ Layout ═══ */
 #app{display:flex;height:100vh}
@@ -1880,10 +1881,18 @@ function renderDatabase(){
       <i data-lucide="${icon}" style="width:14px;height:14px"></i> ${esc(v.name)}</button>`;
   });
   html += `<span class="view-add" onclick="addView()"><i data-lucide="plus" style="width:14px;height:14px"></i></span>`;
+  // Resources tab (only for projects workspace)
+  if(currentDb.workspace === 'projects'){
+    const resActive = window._showResources ? ' active' : '';
+    html += `<button class="view-tab${resActive}" onclick="toggleResources()" style="margin-left:auto;border-left:1px solid var(--border);padding-left:12px">
+      <i data-lucide="folder-open" style="width:14px;height:14px"></i> Resources</button>`;
+  }
   html += `</div>`;
   
   // View content
-  if(currentDbView){
+  if(window._showResources && currentDb.workspace === 'projects'){
+    html += renderResourcesPanel();
+  } else if(currentDbView){
     if(currentDbView.type === 'table') html += renderTableView(schema);
     else if(currentDbView.type === 'board') html += renderBoardView(schema);
     else if(currentDbView.type === 'list') html += renderListView(schema);
@@ -1986,6 +1995,155 @@ function renderListView(schema){
   </div>`;
   html += `</div>`;
   return html;
+}
+
+// ── Resources Panel ────────────────────────────────────────────────────
+window._showResources = false;
+window._projectResources = [];
+
+function toggleResources(){
+  window._showResources = !window._showResources;
+  if(window._showResources) loadResources();
+  else renderDatabase();
+}
+
+async function loadResources(){
+  if(!currentDb) return;
+  try {
+    window._projectResources = await api(`/databases/${currentDb.id}/resources`);
+  } catch(e){ window._projectResources = []; }
+  renderDatabase();
+}
+
+function renderResourcesPanel(){
+  const resources = window._projectResources || [];
+  let html = `<div style="padding:24px 0">`;
+  
+  // Add resource form
+  html += `<div style="display:flex;gap:8px;margin-bottom:20px;align-items:center">
+    <input id="res-path" type="text" placeholder="Path to file or directory (e.g. ~/Documents/project)" 
+      style="flex:1;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;outline:none">
+    <input id="res-name" type="text" placeholder="Name (optional)" 
+      style="width:180px;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;outline:none">
+    <button onclick="addResource()" style="padding:8px 16px;background:var(--cyan);color:#000;border:none;border-radius:var(--radius);cursor:pointer;font-weight:500;font-size:13px;white-space:nowrap">
+      <i data-lucide="plus" style="width:14px;height:14px;vertical-align:middle"></i> Add</button>
+  </div>`;
+  
+  // Semantic search
+  html += `<div style="display:flex;gap:8px;margin-bottom:20px;align-items:center">
+    <input id="res-search" type="text" placeholder="Semantic search across all resources..." 
+      style="flex:1;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;outline:none"
+      onkeydown="if(event.key==='Enter')searchResources()">
+    <button onclick="searchResources()" style="padding:8px 16px;background:var(--purple);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-weight:500;font-size:13px;white-space:nowrap">
+      <i data-lucide="search" style="width:14px;height:14px;vertical-align:middle"></i> Search</button>
+  </div>`;
+  
+  // Search results area
+  html += `<div id="res-search-results"></div>`;
+  
+  // Resource list
+  if(resources.length === 0){
+    html += `<div style="padding:40px;text-align:center;color:var(--text4)">
+      <i data-lucide="folder-plus" style="width:40px;height:40px;margin-bottom:12px;opacity:0.3"></i>
+      <p>No resources yet. Add a file or directory path above.</p>
+    </div>`;
+  } else {
+    html += `<div style="display:flex;flex-direction:column;gap:8px">`;
+    resources.forEach(r => {
+      const typeIcon = r.resource_type === 'directory' ? 'folder' : 'file';
+      const indexed = r.indexed_at;
+      const statusIcon = indexed ? 'check-circle' : 'circle';
+      const statusColor = indexed ? 'var(--green)' : 'var(--text4)';
+      const statusText = indexed ? `Indexed (${r.file_count} files)` : 'Not indexed';
+      
+      html += `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius)">
+        <i data-lucide="${typeIcon}" style="width:18px;height:18px;color:var(--cyan);flex-shrink:0"></i>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;font-size:14px">${esc(r.name)}</div>
+          <div style="font-size:12px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.path)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;color:${statusColor};font-size:12px;flex-shrink:0">
+          <i data-lucide="${statusIcon}" style="width:14px;height:14px"></i> ${statusText}
+        </div>
+        <button onclick="indexResource('${r.id}')" title="Index with QMD" 
+          style="padding:6px 12px;background:${indexed?'var(--card)':'var(--green)'};color:${indexed?'var(--text3)':'#000'};border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap">
+          ${indexed ? 'Re-index' : 'Index'}</button>
+        <button onclick="removeResource('${r.id}')" title="Remove" 
+          style="padding:6px;background:none;border:none;color:var(--text4);cursor:pointer;border-radius:4px" 
+          onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--text4)'">
+          <i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  
+  html += `</div>`;
+  return html;
+}
+
+async function addResource(){
+  const path = document.getElementById('res-path').value.trim();
+  const name = document.getElementById('res-name').value.trim();
+  if(!path){ alert('Please enter a path'); return; }
+  try {
+    await api(`/databases/${currentDb.id}/resources`, 'POST', {path, name});
+    await loadResources();
+  } catch(e){ alert('Error: ' + (e.message || e)); }
+}
+
+async function removeResource(resId){
+  if(!confirm('Remove this resource? (QMD index will also be deleted)')) return;
+  try {
+    await api(`/databases/${currentDb.id}/resources/${resId}`, 'DELETE');
+    await loadResources();
+  } catch(e){ alert('Error: ' + (e.message || e)); }
+}
+
+async function indexResource(resId){
+  const btn = event.target.closest('button');
+  const origText = btn.innerHTML;
+  btn.innerHTML = '<i data-lucide="loader" style="width:14px;height:14px;animation:spin 1s linear infinite"></i> Indexing...';
+  btn.disabled = true;
+  try {
+    const result = await api(`/databases/${currentDb.id}/resources/${resId}/index`, 'POST');
+    await loadResources();
+  } catch(e){ 
+    alert('Indexing failed: ' + (e.message || e));
+    btn.innerHTML = origText;
+    btn.disabled = false;
+  }
+}
+
+async function searchResources(){
+  const q = document.getElementById('res-search').value.trim();
+  if(!q) return;
+  const el = document.getElementById('res-search-results');
+  el.innerHTML = '<div style="padding:12px;color:var(--text3)"><i data-lucide="loader" style="width:14px;height:14px;animation:spin 1s linear infinite;vertical-align:middle"></i> Searching...</div>';
+  try {
+    const data = await api(`/databases/${currentDb.id}/resources/search?q=${encodeURIComponent(q)}`);
+    if(!data.results || data.results.length === 0){
+      el.innerHTML = '<div style="padding:12px;color:var(--text4)">No results found</div>';
+      return;
+    }
+    let html = `<div style="margin-bottom:16px">`;
+    data.results.forEach(r => {
+      const score = r.score ? Math.round(r.score * 100) + '%' : '';
+      const scoreColor = r.score > 0.7 ? 'var(--green)' : r.score > 0.4 ? 'var(--orange)' : 'var(--text3)';
+      html += `<div style="padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:500;color:var(--cyan)">${esc(r.path || r.docid || '')}</span>
+          <span style="font-size:12px;color:${scoreColor};font-weight:600">${score}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text3)">${esc(r.resource_name || '')}</div>
+        ${r.snippet ? `<div style="font-size:12px;color:var(--text2);margin-top:6px;padding:8px;background:var(--bg);border-radius:4px;white-space:pre-wrap;max-height:120px;overflow-y:auto">${esc(r.snippet)}</div>` : ''}
+      </div>`;
+    });
+    html += `</div>`;
+    el.innerHTML = html;
+    lucide.createIcons();
+  } catch(e){
+    el.innerHTML = `<div style="padding:12px;color:var(--red)">Search error: ${esc(e.message||'')}</div>`;
+  }
 }
 
 function renderPropValue(prop, val){

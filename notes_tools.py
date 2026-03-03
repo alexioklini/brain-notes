@@ -4,6 +4,7 @@ Pure Python — no MCP/FastMCP dependency."""
 import json
 import os
 import sqlite3
+import subprocess
 import uuid
 from datetime import datetime, timezone
 
@@ -365,6 +366,174 @@ def delete_database_item(database_id: str, item_id: str) -> str:
 
 
 # ── Context ─────────────────────────────────────────────────────────────────
+
+# ── Resources ───────────────────────────────────────────────────────────────
+
+def list_resources(database_id: str) -> str:
+    """List all resources linked to a project database."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM project_resources WHERE database_id=? ORDER BY created_at DESC",
+            (database_id,)
+        ).fetchall()
+    if not rows:
+        return "No resources linked to this project."
+    lines = [f"## Resources ({len(rows)})"]
+    for r in rows:
+        status = f"Indexed ({r['file_count']} files)" if r['indexed_at'] else "Not indexed"
+        lines.append(f"- **{r['name']}** — `{r['path']}` ({r['resource_type']}) [{status}] (id: `{r['id']}`)")
+    return '\n'.join(lines)
+
+
+def add_resource(database_id: str, path: str, name: str = "") -> str:
+    """Add a file or directory as a resource to a project.
+    
+    Args:
+        database_id: Project database ID
+        path: Absolute or ~ path to file or directory
+        name: Display name (auto-detected from path if empty)
+    """
+    expanded = os.path.expanduser(path.strip())
+    if not os.path.exists(expanded):
+        return json.dumps({"error": f"Path does not exist: {expanded}"})
+    
+    res_type = 'directory' if os.path.isdir(expanded) else 'file'
+    if not name:
+        name = os.path.basename(expanded) or path
+    
+    res_id = gen_id()
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO project_resources (id, database_id, name, path, resource_type) VALUES (?,?,?,?,?)",
+            (res_id, database_id, name, expanded, res_type)
+        )
+        conn.commit()
+    
+    return json.dumps({"created": res_id, "name": name, "path": expanded, "type": res_type})
+
+
+def remove_resource(database_id: str, resource_id: str) -> str:
+    """Remove a resource from a project and delete its QMD index."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM project_resources WHERE id=? AND database_id=?",
+            (resource_id, database_id)
+        ).fetchone()
+        if not row:
+            return json.dumps({"error": "Resource not found"})
+        if row['qmd_collection']:
+            try:
+                subprocess.run(['qmd', 'collection', 'remove', row['qmd_collection']],
+                             capture_output=True, timeout=10)
+            except Exception:
+                pass
+        conn.execute("DELETE FROM project_resources WHERE id=?", (resource_id,))
+        conn.commit()
+    return json.dumps({"deleted": resource_id, "name": row['name']})
+
+
+def index_resource(database_id: str, resource_id: str) -> str:
+    """Index a resource with QMD for semantic search. Creates embeddings."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM project_resources WHERE id=? AND database_id=?",
+            (resource_id, database_id)
+        ).fetchone()
+        if not row:
+            return json.dumps({"error": "Resource not found"})
+        
+        path = row['path']
+        collection_name = f"notes-{database_id}-{resource_id}"
+        
+        if row['resource_type'] == 'directory':
+            mask = "**/*"
+        else:
+            mask = os.path.basename(path)
+            path = os.path.dirname(path)
+        
+        # Remove old collection if exists
+        if row['qmd_collection']:
+            try:
+                subprocess.run(['qmd', 'collection', 'remove', row['qmd_collection']],
+                             capture_output=True, timeout=10)
+            except Exception:
+                pass
+        
+        # Create + index
+        result = subprocess.run(
+            ['qmd', 'collection', 'add', path, '--name', collection_name, '--mask', mask],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode != 0:
+            return json.dumps({"error": f"Indexing failed: {result.stderr}"})
+        
+        # Embed
+        subprocess.run(['qmd', 'embed'], capture_output=True, text=True, timeout=120)
+        
+        # Count files
+        ls_result = subprocess.run(
+            ['qmd', 'ls', collection_name, '--files'],
+            capture_output=True, text=True, timeout=10
+        )
+        file_count = len(ls_result.stdout.strip().split('\n')) if ls_result.stdout.strip() else 0
+        
+        conn.execute(
+            "UPDATE project_resources SET qmd_collection=?, indexed_at=?, file_count=? WHERE id=?",
+            (collection_name, now(), file_count, resource_id)
+        )
+        conn.commit()
+    
+    return json.dumps({"indexed": resource_id, "collection": collection_name, "file_count": file_count})
+
+
+def search_resources(database_id: str, query: str) -> str:
+    """Semantic search across all indexed resources of a project using QMD.
+    
+    Args:
+        database_id: Project database ID
+        query: Natural language search query
+    """
+    with get_db() as conn:
+        resources = conn.execute(
+            "SELECT * FROM project_resources WHERE database_id=? AND qmd_collection IS NOT NULL AND qmd_collection != ''",
+            (database_id,)
+        ).fetchall()
+    
+    if not resources:
+        return "No indexed resources in this project. Add resources and index them first."
+    
+    all_results = []
+    for res in resources:
+        try:
+            result = subprocess.run(
+                ['qmd', 'query', query, '-c', res['qmd_collection'], '-n', '5', '--json'],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                hits = json.loads(result.stdout)
+                for hit in hits:
+                    hit['resource_name'] = res['name']
+                    hit['resource_id'] = res['id']
+                all_results.extend(hits)
+        except Exception:
+            pass
+    
+    if not all_results:
+        return f"No results found for: {query}"
+    
+    all_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+    
+    lines = [f"## Search Results for: {query}"]
+    for r in all_results[:15]:
+        score = f"{r.get('score', 0):.0%}" if isinstance(r.get('score'), (int, float)) else str(r.get('score', ''))
+        path = r.get('path', r.get('docid', ''))
+        snippet = r.get('snippet', '')[:200]
+        lines.append(f"\n**{path}** (Score: {score}, Resource: {r.get('resource_name', '')})")
+        if snippet:
+            lines.append(f"```\n{snippet}\n```")
+    
+    return '\n'.join(lines)
+
 
 def get_all_content() -> str:
     """Get a comprehensive overview of ALL content in the notes app."""

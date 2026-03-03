@@ -130,6 +130,51 @@ def delete_database_item(database_id: str, item_id: str) -> str:
     return notes_tools.delete_database_item(database_id, item_id)
 
 
+# ── Resources ───────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def list_resources(database_id: str) -> str:
+    """List all resources (files/directories) linked to a project database."""
+    return notes_tools.list_resources(database_id)
+
+
+@mcp.tool()
+def add_resource(database_id: str, path: str, name: str = "") -> str:
+    """Add a file or directory as a resource to a project for indexing and semantic search.
+
+    Args:
+        database_id: Project database ID
+        path: Absolute or ~ path to file or directory
+        name: Display name (auto-detected from path if empty)
+    """
+    return notes_tools.add_resource(database_id, path, name)
+
+
+@mcp.tool()
+def remove_resource(database_id: str, resource_id: str) -> str:
+    """Remove a resource from a project and delete its QMD search index."""
+    return notes_tools.remove_resource(database_id, resource_id)
+
+
+@mcp.tool()
+def index_resource(database_id: str, resource_id: str) -> str:
+    """Index a resource with QMD for semantic search. Creates vector embeddings for all files.
+    Must be called after add_resource to enable search."""
+    return notes_tools.index_resource(database_id, resource_id)
+
+
+@mcp.tool()
+def search_resources(database_id: str, query: str) -> str:
+    """Semantic search across all indexed resources of a project using QMD vector search.
+    Returns ranked results with snippets and relevance scores.
+
+    Args:
+        database_id: Project database ID
+        query: Natural language search query (e.g. 'security vulnerabilities', 'budget costs')
+    """
+    return notes_tools.search_resources(database_id, query)
+
+
 # ── Context ─────────────────────────────────────────────────────────────────
 
 @mcp.tool()
