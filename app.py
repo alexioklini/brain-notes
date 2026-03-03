@@ -632,6 +632,11 @@ def revoke_permission(perm_id):
 
 # ── Pages ──────────────────────────────────────────────────────────────────
 
+@app.route('/website')
+@app.route('/website.html')
+def website():
+    return send_from_directory(app.static_folder, 'website.html')
+
 @app.route('/login')
 def login_page():
     return send_from_directory('static', 'login.html')

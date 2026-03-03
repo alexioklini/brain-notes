@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brain Notes — AI-Powered Knowledge Platform</title>
+<meta name="description" content="Self-hosted, AI-powered notes and project management. Semantic search, MCP integration, and complete data ownership.">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050507;--bg2:#0a0a0f;--bg3:#111118;
+  --surface:rgba(255,255,255,0.03);--surface2:rgba(255,255,255,0.06);
+  --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.12);
+  --text:#f0f0f5;--text2:rgba(255,255,255,0.7);--text3:rgba(255,255,255,0.45);
+  --accent:#6366f1;--accent2:#818cf8;--accent-glow:rgba(99,102,241,0.15);
+  --cyan:#06b6d4;--green:#10b981;--pink:#ec4899;--orange:#f59e0b;--purple:#a855f7;
+  --radius:12px;--radius-lg:20px;
+}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+::selection{background:rgba(99,102,241,0.3)}
+a{color:var(--accent2);text-decoration:none;transition:color 150ms}
+a:hover{color:#c7d2fe}
+
+/* ═══ Utility ═══ */
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:var(--accent-glow);border:1px solid rgba(99,102,241,0.2);border-radius:100px;font-size:13px;font-weight:500;color:var(--accent2)}
+.badge::before{content:'';width:6px;height:6px;background:var(--accent);border-radius:50%;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.section-label{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent2);margin-bottom:16px}
+.section-title{font-size:clamp(32px,5vw,48px);font-weight:800;line-height:1.15;letter-spacing:-0.02em;margin-bottom:16px}
+.section-desc{font-size:18px;color:var(--text2);max-width:640px;line-height:1.7}
+.gradient-text{background:linear-gradient(135deg,#c7d2fe 0%,#6366f1 50%,#06b6d4 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+/* ═══ Noise overlay ═══ */
+body::before{content:'';position:fixed;inset:0;background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");opacity:0.4;pointer-events:none;z-index:9999}
+
+/* ═══ Navigation ═══ */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 0;transition:all 300ms}
+nav.scrolled{background:rgba(5,5,7,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between}
+.nav-logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;color:var(--text)}
+.nav-logo svg{width:28px;height:28px}
+.nav-links{display:flex;align-items:center;gap:32px}
+.nav-links a{font-size:14px;font-weight:500;color:var(--text2);transition:color 150ms}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{padding:10px 24px;background:var(--accent);color:#fff;border-radius:10px;font-weight:600;font-size:14px;transition:all 200ms;border:none;cursor:pointer}
+.nav-cta:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 8px 30px rgba(99,102,241,0.3)}
+
+/* ═══ Hero ═══ */
+.hero{min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden;padding:120px 0 80px}
+.hero-bg{position:absolute;inset:0;overflow:hidden}
+.hero-bg::before{content:'';position:absolute;width:800px;height:800px;background:radial-gradient(circle,rgba(99,102,241,0.12) 0%,transparent 70%);top:-200px;right:-200px}
+.hero-bg::after{content:'';position:absolute;width:600px;height:600px;background:radial-gradient(circle,rgba(6,182,212,0.08) 0%,transparent 70%);bottom:-100px;left:-100px}
+.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 30%,transparent 70%)}
+.hero-content{position:relative;z-index:1;text-align:center;max-width:900px;margin:0 auto}
+.hero-content h1{font-size:clamp(42px,7vw,76px);font-weight:900;line-height:1.05;letter-spacing:-0.03em;margin:24px 0}
+.hero-content p{font-size:20px;color:var(--text2);max-width:600px;margin:0 auto 40px;line-height:1.7}
+.hero-buttons{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.btn-primary{padding:16px 36px;background:var(--accent);color:#fff;border-radius:12px;font-weight:700;font-size:16px;transition:all 200ms;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn-primary:hover{background:var(--accent2);transform:translateY(-2px);box-shadow:0 12px 40px rgba(99,102,241,0.35)}
+.btn-secondary{padding:16px 36px;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:12px;font-weight:600;font-size:16px;transition:all 200ms;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn-secondary:hover{background:var(--surface);border-color:var(--accent);transform:translateY(-2px)}
+.hero-visual{position:relative;margin-top:80px;z-index:1}
+.hero-mockup{width:100%;max-width:1000px;margin:0 auto;border-radius:16px;overflow:hidden;border:1px solid var(--border2);box-shadow:0 40px 100px rgba(0,0,0,0.5),0 0 0 1px rgba(255,255,255,0.05) inset;background:var(--bg2)}
+.hero-mockup-bar{height:40px;background:var(--bg3);display:flex;align-items:center;padding:0 16px;gap:8px;border-bottom:1px solid var(--border)}
+.hero-mockup-bar .dot{width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,0.1)}
+.hero-mockup-bar .dot:nth-child(1){background:#ff5f57}
+.hero-mockup-bar .dot:nth-child(2){background:#febc2e}
+.hero-mockup-bar .dot:nth-child(3){background:#28c840}
+.hero-mockup-body{display:flex;min-height:400px}
+.mockup-sidebar{width:220px;background:rgba(255,255,255,0.02);border-right:1px solid var(--border);padding:16px}
+.mockup-main{flex:1;padding:32px}
+.mockup-item{padding:8px 12px;border-radius:6px;font-size:13px;color:var(--text3);cursor:default;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+.mockup-item.active{background:var(--accent-glow);color:var(--accent2)}
+.mockup-item .icon{width:16px;height:16px;opacity:0.5}
+.mockup-h1{font-size:28px;font-weight:700;margin-bottom:16px;color:var(--text)}
+.mockup-text{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:12px}
+.mockup-block{padding:8px 12px;background:var(--surface);border-radius:6px;font-size:13px;color:var(--text2);margin-bottom:8px;border-left:3px solid var(--accent)}
+.mockup-tag{display:inline-block;padding:2px 10px;background:rgba(16,185,129,0.15);color:var(--green);border-radius:4px;font-size:12px;font-weight:500;margin-right:6px}
+
+/* ═══ Logo Cloud ═══ */
+.logos{padding:60px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.logos-inner{display:flex;align-items:center;justify-content:center;gap:48px;flex-wrap:wrap;opacity:0.4}
+.logos-inner span{font-size:16px;font-weight:600;letter-spacing:0.5px;color:var(--text3)}
+
+/* ═══ Features ═══ */
+.features{padding:120px 0}
+.features-header{text-align:center;margin-bottom:80px}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.feature-card{padding:36px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);transition:all 300ms;position:relative;overflow:hidden}
+.feature-card:hover{border-color:var(--border2);transform:translateY(-4px);box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+.feature-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(99,102,241,0.3),transparent);opacity:0;transition:opacity 300ms}
+.feature-card:hover::before{opacity:1}
+.feature-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:20px;font-size:24px}
+.feature-card h3{font-size:18px;font-weight:700;margin-bottom:10px}
+.feature-card p{font-size:14px;color:var(--text2);line-height:1.7}
+
+/* ═══ Bento Grid ═══ */
+.bento{padding:120px 0}
+.bento-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:20px}
+.bento-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px;overflow:hidden;position:relative;transition:all 300ms}
+.bento-card:hover{border-color:var(--border2)}
+.bento-card h3{font-size:20px;font-weight:700;margin-bottom:8px}
+.bento-card p{font-size:14px;color:var(--text2);line-height:1.6}
+.bento-wide{grid-column:span 8}
+.bento-narrow{grid-column:span 4}
+.bento-half{grid-column:span 6}
+.bento-visual{margin-top:24px;background:var(--bg2);border-radius:12px;border:1px solid var(--border);overflow:hidden}
+.bento-code{font-family:'JetBrains Mono',monospace;font-size:13px;padding:20px;line-height:1.8;color:var(--text2)}
+.bento-code .keyword{color:var(--purple)}
+.bento-code .string{color:var(--green)}
+.bento-code .comment{color:var(--text3)}
+.bento-code .func{color:var(--cyan)}
+
+/* ═══ Architecture ═══ */
+.architecture{padding:120px 0;background:var(--bg2)}
+.arch-diagram{margin-top:60px;display:flex;flex-direction:column;gap:20px;max-width:800px;margin-left:auto;margin-right:auto}
+.arch-layer{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.arch-box{padding:16px 28px;background:var(--surface);border:1px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;text-align:center;flex:1;min-width:160px;max-width:240px;transition:all 200ms}
+.arch-box:hover{border-color:var(--accent);background:var(--accent-glow)}
+.arch-box small{display:block;font-size:11px;font-weight:400;color:var(--text3);margin-top:4px}
+.arch-connector{text-align:center;color:var(--text3);font-size:20px}
+
+/* ═══ Pricing ═══ */
+.pricing{padding:120px 0}
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:60px}
+.price-card{padding:40px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);position:relative;transition:all 300ms}
+.price-card.featured{border-color:var(--accent);background:linear-gradient(180deg,rgba(99,102,241,0.08) 0%,var(--surface) 100%)}
+.price-card.featured::before{content:'Most Popular';position:absolute;top:-12px;left:50%;transform:translateX(-50%);padding:4px 16px;background:var(--accent);color:#fff;border-radius:100px;font-size:12px;font-weight:600}
+.price-card:hover{transform:translateY(-4px);box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+.price-name{font-size:20px;font-weight:700;margin-bottom:8px}
+.price-amount{font-size:48px;font-weight:900;letter-spacing:-0.02em;margin:16px 0}
+.price-amount span{font-size:16px;font-weight:400;color:var(--text3)}
+.price-desc{font-size:14px;color:var(--text2);margin-bottom:24px;line-height:1.6}
+.price-features{list-style:none;margin-bottom:32px}
+.price-features li{padding:8px 0;font-size:14px;color:var(--text2);display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.price-features li::before{content:'✓';color:var(--green);font-weight:700;font-size:16px}
+.price-btn{width:100%;padding:14px;border-radius:10px;font-weight:600;font-size:15px;cursor:pointer;transition:all 200ms;border:none}
+.price-btn.primary{background:var(--accent);color:#fff}
+.price-btn.primary:hover{background:var(--accent2);box-shadow:0 8px 30px rgba(99,102,241,0.3)}
+.price-btn.secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border2)}
+.price-btn.secondary:hover{border-color:var(--accent)}
+
+/* ═══ CTA ═══ */
+.cta{padding:120px 0;text-align:center;position:relative;overflow:hidden}
+.cta::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(99,102,241,0.1) 0%,transparent 60%)}
+.cta-content{position:relative;z-index:1}
+.cta h2{font-size:clamp(36px,5vw,56px);font-weight:900;letter-spacing:-0.02em;margin-bottom:20px}
+.cta p{font-size:18px;color:var(--text2);max-width:500px;margin:0 auto 40px}
+
+/* ═══ Footer ═══ */
+footer{padding:60px 0;border-top:1px solid var(--border)}
+.footer-inner{display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:40px}
+.footer-brand{max-width:300px}
+.footer-brand h3{font-size:18px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.footer-brand p{font-size:13px;color:var(--text3);line-height:1.6}
+.footer-links{display:flex;gap:60px}
+.footer-col h4{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:16px}
+.footer-col a{display:block;font-size:14px;color:var(--text2);padding:4px 0;transition:color 150ms}
+.footer-col a:hover{color:var(--text)}
+.footer-bottom{margin-top:40px;padding-top:24px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px;color:var(--text3)}
+
+/* ═══ Responsive ═══ */
+@media(max-width:768px){
+  .features-grid{grid-template-columns:1fr}
+  .bento-wide,.bento-narrow,.bento-half{grid-column:span 12}
+  .pricing-grid{grid-template-columns:1fr}
+  .nav-links{display:none}
+  .footer-links{flex-direction:column;gap:32px}
+  .footer-inner{flex-direction:column}
+  .footer-bottom{flex-direction:column;gap:8px}
+  .arch-layer{flex-direction:column;align-items:center}
+  .hero-mockup-body{flex-direction:column}
+  .mockup-sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border)}
+}
+@media(min-width:769px) and (max-width:1024px){
+  .features-grid{grid-template-columns:repeat(2,1fr)}
+  .pricing-grid{grid-template-columns:repeat(2,1fr)}
+  .bento-wide{grid-column:span 7}
+  .bento-narrow{grid-column:span 5}
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav id="nav">
+  <div class="container nav-inner">
+    <div class="nav-logo">
+      <svg viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M10 10h12M10 16h8M10 22h10" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
+      Brain Notes
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://github.com/alexioklini/brain-notes" target="_blank">GitHub</a>
+      <button class="nav-cta" onclick="location.href='/login'">Get Started</button>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-bg"><div class="hero-grid"></div></div>
+  <div class="container">
+    <div class="hero-content">
+      <span class="badge">Now with AI-Powered Semantic Search</span>
+      <h1>Your knowledge,<br><span class="gradient-text">intelligently organized</span></h1>
+      <p>A self-hosted knowledge platform that combines beautiful note-taking, project management, and AI — with complete data ownership.</p>
+      <div class="hero-buttons">
+        <button class="btn-primary" onclick="location.href='/login'">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Start for Free
+        </button>
+        <button class="btn-secondary" onclick="location.href='https://github.com/alexioklini/brain-notes'">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          View Source
+        </button>
+      </div>
+    </div>
+    
+    <!-- App Mockup -->
+    <div class="hero-visual">
+      <div class="hero-mockup">
+        <div class="hero-mockup-bar">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span style="flex:1;text-align:center;font-size:12px;color:var(--text3)">notes.yourcompany.com</span>
+        </div>
+        <div class="hero-mockup-body">
+          <div class="mockup-sidebar">
+            <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;padding:0 12px">Docs</div>
+            <div class="mockup-item active">📄 Architecture Overview</div>
+            <div class="mockup-item">📋 API Documentation</div>
+            <div class="mockup-item">🔐 Security Policies</div>
+            <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;padding:0 12px">Projects</div>
+            <div class="mockup-item">📊 Q1 Sprint Board</div>
+            <div class="mockup-item">🚀 Product Roadmap</div>
+          </div>
+          <div class="mockup-main">
+            <div class="mockup-h1">Architecture Overview</div>
+            <div class="mockup-text">The system follows a microservices architecture with event-driven communication between services.</div>
+            <div class="mockup-block">The API gateway handles authentication, rate limiting, and request routing to downstream services.</div>
+            <div style="display:flex;gap:6px;margin-top:16px">
+              <span class="mockup-tag">Backend</span>
+              <span class="mockup-tag" style="background:rgba(99,102,241,0.15);color:var(--accent2)">v2.1</span>
+              <span class="mockup-tag" style="background:rgba(236,72,153,0.15);color:var(--pink)">In Review</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Trusted By -->
+<section class="logos">
+  <div class="container">
+    <div class="logos-inner">
+      <span>Compatible with</span>
+      <span>🤖 Claude</span>
+      <span>🔌 MCP Protocol</span>
+      <span>🦙 Ollama</span>
+      <span>⚡ OpenAI</span>
+      <span>🧠 Any LLM</span>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="features-header">
+      <div class="section-label">Features</div>
+      <h2 class="section-title">Everything you need to<br><span class="gradient-text">think clearly</span></h2>
+      <p class="section-desc" style="margin:0 auto">A complete workspace that grows with your ideas — from quick notes to enterprise knowledge management.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(99,102,241,0.12)">📝</div>
+        <h3>Block-Based Editor</h3>
+        <p>Rich content blocks — headings, lists, todos, code, quotes, callouts. Drag, nest, and organize with intuitive controls.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(6,182,212,0.12)">🔍</div>
+        <h3>Semantic Search</h3>
+        <p>AI-powered vector search across all your documents and project files. Find by meaning, not just keywords.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(16,185,129,0.12)">📊</div>
+        <h3>Project Management</h3>
+        <p>Kanban boards, tables, and list views with custom properties. Track status, priority, dates, and tags.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(168,85,247,0.12)">🤖</div>
+        <h3>AI Assistant</h3>
+        <p>Built-in chat that understands your notes. Generate content, summarize pages, manage projects — all conversationally.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(236,72,153,0.12)">🔌</div>
+        <h3>MCP Integration</h3>
+        <p>18 tools via Model Context Protocol. Connect Claude, OpenClaw, or any MCP client to your knowledge base.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(245,158,11,0.12)">🔐</div>
+        <h3>Self-Hosted & Secure</h3>
+        <p>Your data stays on your server. Multi-user with teams, granular permissions, and complete data sovereignty.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Bento Grid -->
+<section class="bento" id="details">
+  <div class="container">
+    <div class="bento-grid">
+      <!-- AI Search -->
+      <div class="bento-card bento-wide">
+        <div class="section-label">Semantic Search</div>
+        <h3>Search by meaning, not keywords</h3>
+        <p>Link files and directories to your projects. QMD vector embeddings let you search across thousands of documents with natural language queries.</p>
+        <div class="bento-visual" style="padding:24px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="flex:1;padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text2)">What security vulnerabilities were found?</div>
+            <div style="padding:10px 20px;background:var(--purple);color:#fff;border-radius:8px;font-size:13px;font-weight:600">Search</div>
+          </div>
+          <div style="padding:14px;background:var(--surface);border-radius:8px;border-left:3px solid var(--green);margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:600;color:var(--cyan)">security-report.md</span><span style="font-size:12px;font-weight:600;color:var(--green)">93%</span></div>
+            <div style="font-size:12px;color:var(--text3)">SQL injection vulnerability in user search endpoint, hardcoded API keys in frontend...</div>
+          </div>
+          <div style="padding:14px;background:var(--surface);border-radius:8px;border-left:3px solid var(--orange)">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:600;color:var(--cyan)">meeting-notes.md</span><span style="font-size:12px;font-weight:600;color:var(--orange)">50%</span></div>
+            <div style="font-size:12px;color:var(--text3)">New authentication system approved — OAuth2 with PKCE flow...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MCP -->
+      <div class="bento-card bento-narrow">
+        <div class="section-label">MCP Protocol</div>
+        <h3>18 AI Tools</h3>
+        <p>Connect any MCP-compatible AI to your notes.</p>
+        <div class="bento-visual bento-code">
+          <span class="comment">// MCP tool call</span><br>
+          <span class="func">search_resources</span>({<br>
+          &nbsp;&nbsp;<span class="string">"database_id"</span>: <span class="string">"proj_1"</span>,<br>
+          &nbsp;&nbsp;<span class="string">"query"</span>: <span class="string">"auth flow"</span><br>
+          })<br><br>
+          <span class="comment">// → 5 ranked results</span>
+        </div>
+      </div>
+
+      <!-- Self-hosted -->
+      <div class="bento-card bento-half">
+        <div class="section-label">Privacy First</div>
+        <h3>Your server. Your data.</h3>
+        <p>Deploy on any machine — Mac, Linux, cloud VM. SQLite database, no external dependencies. Back up with a single file copy.</p>
+        <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
+          <div style="padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px">🍎 macOS</div>
+          <div style="padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px">🐧 Linux</div>
+          <div style="padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px">☁️ Cloud</div>
+          <div style="padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px">🐳 Docker</div>
+        </div>
+      </div>
+
+      <!-- Multi-user -->
+      <div class="bento-card bento-half">
+        <div class="section-label">Collaboration</div>
+        <h3>Teams & Permissions</h3>
+        <p>Multi-user with roles, teams, and granular sharing. Control who can read, write, or admin any page or project.</p>
+        <div style="margin-top:20px;display:flex;gap:8px;align-items:center">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff">A</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--cyan);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;margin-left:-8px">S</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--pink);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;margin-left:-8px">T</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--surface2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--text3);margin-left:-8px">+</div>
+          <span style="font-size:13px;color:var(--text3);margin-left:8px">Invite your team</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section class="architecture" id="architecture">
+  <div class="container">
+    <div style="text-align:center">
+      <div class="section-label">Architecture</div>
+      <h2 class="section-title">Simple by design,<br><span class="gradient-text">powerful by nature</span></h2>
+      <p class="section-desc" style="margin:0 auto">No Kubernetes, no microservices, no complexity. One process, one database, infinite possibilities.</p>
+    </div>
+    <div class="arch-diagram">
+      <div class="arch-layer">
+        <div class="arch-box" style="border-color:var(--accent)">Frontend SPA<small>Vanilla JS • Single HTML</small></div>
+        <div class="arch-box" style="border-color:var(--cyan)">MCP Clients<small>Claude • OpenClaw • Any</small></div>
+      </div>
+      <div class="arch-connector">↕</div>
+      <div class="arch-layer">
+        <div class="arch-box" style="border-color:var(--green)">Flask API<small>REST • Session Auth</small></div>
+        <div class="arch-box" style="border-color:var(--purple)">MCP Server<small>FastMCP • 18 Tools</small></div>
+      </div>
+      <div class="arch-connector">↕</div>
+      <div class="arch-layer">
+        <div class="arch-box" style="border-color:var(--orange)">Shared Logic<small>notes_tools.py</small></div>
+      </div>
+      <div class="arch-connector">↕</div>
+      <div class="arch-layer">
+        <div class="arch-box" style="border-color:var(--pink)">SQLite<small>WAL Mode • FTS5</small></div>
+        <div class="arch-box" style="border-color:var(--cyan)">QMD<small>Vector Search • Embeddings</small></div>
+        <div class="arch-box" style="border-color:var(--green)">LLM Provider<small>Any OpenAI-compatible</small></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <div style="text-align:center">
+      <div class="section-label">Pricing</div>
+      <h2 class="section-title">Open source core,<br><span class="gradient-text">premium when you need it</span></h2>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-name">Community</div>
+        <div class="price-amount">Free<span></span></div>
+        <div class="price-desc">Perfect for personal use and small teams.</div>
+        <ul class="price-features">
+          <li>Unlimited pages & projects</li>
+          <li>Block-based editor</li>
+          <li>Full-text search</li>
+          <li>AI chat assistant</li>
+          <li>MCP integration</li>
+          <li>Self-hosted deployment</li>
+        </ul>
+        <button class="price-btn secondary">Get Started</button>
+      </div>
+      <div class="price-card featured">
+        <div class="price-name">Professional</div>
+        <div class="price-amount">€9<span>/user/month</span></div>
+        <div class="price-desc">For teams that need advanced collaboration and search.</div>
+        <ul class="price-features">
+          <li>Everything in Community</li>
+          <li>Semantic search (QMD)</li>
+          <li>Project resources & indexing</li>
+          <li>Multi-user & teams</li>
+          <li>Granular permissions</li>
+          <li>Priority support</li>
+        </ul>
+        <button class="price-btn primary">Start Free Trial</button>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Enterprise</div>
+        <div class="price-amount">Custom<span></span></div>
+        <div class="price-desc">For organizations with compliance and scale requirements.</div>
+        <ul class="price-features">
+          <li>Everything in Professional</li>
+          <li>SSO / SAML authentication</li>
+          <li>Audit logging</li>
+          <li>Custom integrations</li>
+          <li>On-premise deployment</li>
+          <li>Dedicated support</li>
+        </ul>
+        <button class="price-btn secondary">Contact Sales</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+  <div class="container cta-content">
+    <h2>Ready to own your<br><span class="gradient-text">knowledge?</span></h2>
+    <p>Deploy Brain Notes in minutes. Keep your data private. Let AI amplify your thinking.</p>
+    <div class="hero-buttons">
+      <button class="btn-primary" onclick="location.href='/login'">
+        Get Started Free
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+      <button class="btn-secondary" onclick="location.href='https://github.com/alexioklini/brain-notes'">
+        Star on GitHub ⭐
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <h3>
+          <svg width="24" height="24" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#6366f1"/><path d="M10 10h12M10 16h8M10 22h10" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
+          Brain Notes
+        </h3>
+        <p>AI-powered knowledge platform. Self-hosted. Open source core. Built for teams that think.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#architecture">Architecture</a>
+          <a href="/login">Login</a>
+        </div>
+        <div class="footer-col">
+          <h4>Developers</h4>
+          <a href="https://github.com/alexioklini/brain-notes">GitHub</a>
+          <a href="https://github.com/alexioklini/brain-notes/tree/main/docs">Documentation</a>
+          <a href="https://github.com/alexioklini/brain-notes/tree/main/docs/DEVELOPER.md">API Reference</a>
+          <a href="https://github.com/alexioklini/brain-notes/tree/main/docs/DEVELOPER.md#mcp-server-reference">MCP Tools</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="#">About</a>
+          <a href="#">Blog</a>
+          <a href="#">Privacy</a>
+          <a href="#">Terms</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Brain Notes. All rights reserved.</span>
+      <span>Made with 🧠 in Vienna</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Nav scroll effect
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  nav.classList.toggle('scrolled', window.scrollY > 50);
+});
+
+// Smooth scroll for anchor links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if(target) target.scrollIntoView({behavior:'smooth',block:'start'});
+  });
+});
+
+// Intersection Observer for fade-in
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+    }
+  });
+}, {threshold: 0.1});
+
+document.querySelectorAll('.feature-card, .bento-card, .price-card, .arch-box').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(20px)';
+  el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>
